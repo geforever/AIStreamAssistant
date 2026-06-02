@@ -130,7 +130,7 @@ G 酱是一个 Twitch 直播聊天机器人,定位"虚拟 VTuber 助手":观众�
            Viewer 收到:
              - 切换表情(Cubism fade 自动 1s 过渡)
              - WebAudio 解码 + 播放
-             - AnalyserNode 实时音量驱动 ParamMouthOpenY
+             - AnalyserNode 实时音量驱动 PARAM_MOUTH_OPEN_Y
 ```
 
 **关键设计点:**
@@ -186,17 +186,21 @@ tts:
 
 live2d:
   websocket_port: 8765
-  model_path: "live2d-model/g-chan.model3.json"
-  expression_map:
-    happy:     "expressions/Smile.exp3.json"
-    angry:     "expressions/Angry.exp3.json"
-    sad:       "expressions/Sad.exp3.json"
-    surprised: "expressions/Surprised.exp3.json"
-    shy:       "expressions/Blush.exp3.json"
-    thinking:  "expressions/Think.exp3.json"
-    tsundere:  "expressions/Pout.exp3.json"
-    dizzy:     "expressions/Sweat.exp3.json"
-  fallback_expression: "happy"
+  model_path: "Live2D/Epsilon_free/runtime/Epsilon_free.model3.json"
+  expression_map:                          # mood → expression Name (model3.json 中的 Name)
+    happy:     "Smile"
+    angry:     "Angry"
+    sad:       "Sad"
+    surprised: "Surprised"
+    shy:       "Blushing"
+    thinking:  "f01"                       # 撇嘴困惑
+    tsundere:  "Angry"                     # 复用生气脸(嘴硬不爽)
+    dizzy:     "f02"                       # 半闭眼困倦
+  fallback_expression: "Normal"            # 找不到 mapped expression 时兜底
+  idle_motion: "Idle"                      # model3.json Motions 分组名,前端循环播放
+  params:
+    lipsync: "PARAM_MOUTH_OPEN_Y"          # ← Epsilon_free 用大写下划线
+    eye_blink: ["PARAM_EYE_L_OPEN", "PARAM_EYE_R_OPEN"]
 
 logging:
   level: "info"
@@ -365,7 +369,7 @@ except LLMError as e:
 **方案: 音量包络法(WebAudio AnalyserNode)。**
 
 - 后端**只推 audio**,不算 lip sync 数据
-- 前端 `requestAnimationFrame` 循环读 frequency data,取人声频段(100-2000Hz)平均能量映射到 `ParamMouthOpenY`(0-1)
+- 前端 `requestAnimationFrame` 循环读 frequency data,取人声频段(100-2000Hz)平均能量映射到 `PARAM_MOUTH_OPEN_Y`(0-1)
 - 天然语言无关,中/日/英无差别
 - 实现 ~30 行 TS
 
@@ -384,7 +388,8 @@ export function attachLipsync(audio: AudioBufferSourceNode, ctx: AudioContext, m
     const voice = data.slice(2, 40);                       // 人声主能量区
     const energy = voice.reduce((a, b) => a + b, 0) / voice.length / 255;
     const mouth = Math.min(1, energy * 1.5);
-    model.internalModel.coreModel.setParameterValueById("ParamMouthOpenY", mouth);
+    // 参数 ID 来自 config.live2d.params.lipsync — Epsilon_free 是 PARAM_MOUTH_OPEN_Y
+    model.internalModel.coreModel.setParameterValueById(LIPSYNC_PARAM, mouth);
     raf = requestAnimationFrame(tick);
   };
   audio.onended = () => cancelAnimationFrame(raf);
@@ -404,10 +409,12 @@ export function attachLipsync(audio: AudioBufferSourceNode, ctx: AudioContext, m
 | 行为 | 来源 | 配置 |
 |---|---|---|
 | 呼吸 / 身体微摆 | Cubism `CubismBreath` 自带 | 默认正弦波 |
-| 眨眼 | Cubism `CubismEyeBlink` 自带 | 随机 2-6s 一次 |
-| 头部漂移 | 自写 simplex noise | 周期 5-10s,振幅小 |
+| 眨眼 | Cubism `CubismEyeBlink` 自带 | 随机 2-6s 一次,参数 ID 从 config 读 |
+| 头部 / 身体动作 | **模型自带 Idle motion**(`config.live2d.idle_motion`)| Epsilon_free 含 `Epsilon_idle_01.motion3.json`,循环播放即可,无需自写 noise |
 
-说话时 idle 继续运行,只有 ParamMouthOpenY 被 lipsync 接管。
+说话时 idle 继续运行,只有 lipsync 参数(`PARAM_MOUTH_OPEN_Y`)被音量分析接管。
+
+**如果用户更换的模型没有 Idle motion**,fallback:viewer 用 simplex noise 驱动 `PARAM_ANGLE_X/Y/Z` 微动(~30 行 TS),作为可选 idle 实现。
 
 ### 8.4 模型加载
 
@@ -530,11 +537,15 @@ g-chan/
 ├── prompts/
 │   ├── default.md
 │   └── output_format.md
-├── live2d-model/               # 模型放这
-│   ├── g-chan.model3.json
-│   ├── g-chan.moc3
-│   ├── textures/
-│   └── expressions/
+├── Live2D/                     # 模型(已存放 Epsilon_free 官方样本)
+│   └── Epsilon_free/runtime/
+│       ├── Epsilon_free.model3.json
+│       ├── Epsilon_free.moc3
+│       ├── Epsilon_free.physics3.json
+│       ├── Epsilon_free.cdi3.json
+│       ├── Epsilon_free.2048/  # textures
+│       ├── expressions/        # 8 个 .exp3.json
+│       └── motion/             # 含 Epsilon_idle_01.motion3.json
 ├── logs/                       # gitignore
 ├── src/g_chan/
 │   ├── __init__.py
@@ -679,11 +690,13 @@ dev = [
 
 下列项目在实现期需要确认或现场决定,不阻塞设计批准:
 
-1. **模型文件清单确认** — 用户检查 `live2d-model/g-chan.model3.json`,告知实际 expression 文件名以填入 `expression_map`
-2. **嘴型参数 ID 确认** — 多数模型用 `ParamMouthOpenY`,但部分模型自定义,需读 model3.json `Parameters` 确认
+1. ~~**模型文件清单确认**~~ — ✅ 已确认 Epsilon_free 含 8 个 expression(Angry/Blushing/f01/f02/Normal/Sad/Smile/Surprised)+ 1 个 Idle motion
+2. ~~**嘴型参数 ID 确认**~~ — ✅ 已确认 `PARAM_MOUTH_OPEN_Y`(大写下划线)
 3. **Edge TTS 声线最终选择** — `zh-CN-XiaoyiNeural` 是初稿,可试听后换(`XiaoxiaoNeural` / `XiaoshuangNeural` 等)
 4. **Twitch bot 账号准备** — 用户需注册 bot Twitch 账号、获取 OAuth token 和 Client ID/Secret
 5. **LLM 优先 provider 默认值** — 实现期先用免费额度最高的 Gemini 2.5 Flash;部署前再看用户实际 API key 情况
+6. **f01/f02 mood 归属可调** — f01=撇嘴困惑、f02=半闭眼困倦,实现期可微调到 thinking/dizzy/tsundere 三者间的最佳搭配(直播试用后决定)
+7. **模型是否长期使用 Epsilon_free** — 用户决定;如果换模型,只需改 `model_path` + `expression_map` + `params`,代码不动
 
 ---
 
