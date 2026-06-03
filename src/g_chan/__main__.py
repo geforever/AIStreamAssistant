@@ -80,6 +80,7 @@ async def amain() -> int:
     )
     orch.wire()
 
+    # include_stream_context = true时，启动轮询以定期更新直播上下文；否则跳过
     if isinstance(sctx, StreamContextProvider):
         polling = asyncio.create_task(
             sctx.start_polling(cfg.stream_context.poll_interval_ms)

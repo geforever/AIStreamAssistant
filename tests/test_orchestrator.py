@@ -3,7 +3,7 @@ import pytest
 from g_chan.llm.base import LLMTimeoutError
 from g_chan.orchestrator import Orchestrator
 from g_chan.persona.loader import StreamContext
-from tests.conftest import FakeChat, FakeLLM, make_reply
+from tests.conftest import FakeAudioSink, FakeChat, FakeLLM, FakeTTS, make_reply
 
 
 class FixedPersona:
@@ -101,9 +101,6 @@ async def test_passes_stream_context_to_persona(monkeypatch):
     orch.wire()
     await chat.emit("alice", "在玩啥?")
     assert persona_called_with == [ctx]
-
-
-from tests.conftest import FakeAudioSink, FakeTTS
 
 
 @pytest.mark.asyncio
@@ -216,3 +213,118 @@ async def test_no_tts_when_llm_fails():
     assert len(chat.sent) == 1
     assert tts.calls == []
     assert sink.writes == []
+
+
+@pytest.mark.asyncio
+async def test_chat_send_happens_after_tts_completes():
+    """串行: TTS 完成(成功或失败)之后才发 chat,避免文字先到声音晚到的脱节感。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊", mood="happy")
+    tts = FakeTTS()
+    sink = FakeAudioSink()
+
+    events: list[str] = []
+    orig_synth = tts.synthesize
+    orig_send = chat.send
+    orig_write = sink.write
+
+    async def synth(text, *, timeout_s=10.0):
+        events.append("tts_start")
+        result = await orig_synth(text, timeout_s=timeout_s)
+        events.append("tts_done")
+        return result
+
+    async def write(audio, *, user):
+        events.append("sink_write")
+        return await orig_write(audio, user=user)
+
+    async def send(text):
+        events.append("chat_send")
+        return await orig_send(text)
+
+    tts.synthesize = synth        # type: ignore[method-assign]
+    sink.write = write            # type: ignore[method-assign]
+    chat.send = send              # type: ignore[method-assign]
+
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+        tts=tts,
+        audio_sink=sink,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+
+    # tts → write → chat 严格顺序
+    assert events == ["tts_start", "tts_done", "sink_write", "chat_send"]
+
+
+@pytest.mark.asyncio
+async def test_chat_appends_kaomoji_tts_uses_text_only():
+    """正常路径:LLM 分离返回 text + kaomoji,chat 拼接展示,TTS 只用 text。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply(
+        "哼,本小姐才没有", mood="tsundere", kaomoji="(›´ω`‹)"
+    )
+    tts = FakeTTS()
+    sink = FakeAudioSink()
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+        tts=tts,
+        audio_sink=sink,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+
+    # chat: text + kaomoji 拼接
+    assert chat.sent == ["@alice 哼,本小姐才没有 (›´ω`‹)"]
+    # tts: 只用 text
+    assert tts.calls == ["哼,本小姐才没有"]
+
+
+@pytest.mark.asyncio
+async def test_chat_no_trailing_space_when_kaomoji_empty():
+    """kaomoji 为空时,chat 不应有多余空格。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好的,知道了", mood="happy", kaomoji="")
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+    assert chat.sent == ["@alice 好的,知道了"]
+
+
+@pytest.mark.asyncio
+async def test_tts_skipped_when_text_is_blank():
+    """text 全空白时跳过 TTS — 边界情况,chat 仍发送(可能只有 kaomoji)。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("   ", mood="happy", kaomoji="(=ω=)")
+    tts = FakeTTS()
+    sink = FakeAudioSink()
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+        tts=tts,
+        audio_sink=sink,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+
+    assert tts.calls == []        # 没调 synth
+    assert sink.writes == []      # 也没写文件
+    assert len(chat.sent) == 1    # chat 还是发了

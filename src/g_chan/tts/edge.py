@@ -35,7 +35,7 @@ class EdgeTTSEngine(TTSEngine):
 
         try:
             data = await asyncio.wait_for(_do(), timeout=timeout_s)
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             raise TTSTimeoutError(f"Edge TTS timeout after {timeout_s}s") from e
         except Exception as e:  # noqa: BLE001
             raise TTSServerError(f"Edge TTS error: {e}") from e

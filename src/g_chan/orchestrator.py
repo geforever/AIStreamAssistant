@@ -1,7 +1,6 @@
 """Orchestrator — 把 chat / persona / llm / rate_limit / tts 串成一条对话路径。"""
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import Protocol
 
@@ -66,19 +65,23 @@ class Orchestrator:
             return
 
         log.info(
-            "reply: mood=%s latency=%dms tokens=%d/%d text=%r",
+            "reply: mood=%s latency=%dms tokens=%d/%d text=%r kaomoji=%r",
             reply.mood, reply.latency_ms, reply.tokens_in, reply.tokens_out,
-            reply.text,
+            reply.text, reply.kaomoji,
         )
 
-        # 并行: chat 文本 + TTS 合成保存。任一异常不影响另一条。
-        # _do_tts 内部已 catch 所有异常,所以 gather 不会因 TTS 抛
-        chat_task = self._chat.send(f"@{msg.user} {reply.text}")
-        tts_task = self._do_tts(reply.text, user=msg.user)
-        await asyncio.gather(chat_task, tts_task)
+        # 串行: 先 TTS(只用 text,不含颜文字),完成后再发 chat(text + kaomoji 拼接)。
+        # 目的:让观众看到文字的同时听到声音,不会出现"文字先到、声音晚 1s"的脱节感。
+        # TTS 任何异常都被 _do_tts 内部吞,不影响 chat 路径。
+        await self._do_tts(reply.text, user=msg.user)
+        chat_body = f"{reply.text} {reply.kaomoji}".strip() if reply.kaomoji else reply.text
+        await self._chat.send(f"@{msg.user} {chat_body}")
 
     async def _do_tts(self, text: str, *, user: str) -> None:
         if self._tts is None or self._audio_sink is None:
+            return
+        if not text.strip():
+            log.info("tts text is empty, skipping synthesis")
             return
         try:
             audio = await self._tts.synthesize(text)

@@ -1,18 +1,20 @@
-"""Gemini provider — google-genai 适配。"""
+"""Gemini provider — google-genai 适配,使用 JSON mode + response_schema 约束输出。"""
 from __future__ import annotations
 
 import asyncio
 import time
 
 from google import genai
+from google.genai import types
 
 from g_chan.llm.base import (
+    LLM_OUTPUT_SCHEMA,
     LLMMessage,
     LLMProvider,
     LLMReply,
     LLMServerError,
     LLMTimeoutError,
-    parse_mood,
+    parse_llm_json,
 )
 
 
@@ -35,12 +37,14 @@ class GeminiProvider(LLMProvider):
              "parts": [{"text": m.content}]}
             for m in messages if m.role != "system"
         ]
-        config = {
-            "temperature": temperature,
-            "max_output_tokens": max_tokens,
-        }
-        if system:
-            config["system_instruction"] = system
+        # google-genai 字段名是 camelCase。用显式 GenerateContentConfig 避免 dict 写法被忽略
+        config = types.GenerateContentConfig(
+            temperature=temperature,
+            maxOutputTokens=max_tokens,
+            responseMimeType="application/json",
+            responseSchema=LLM_OUTPUT_SCHEMA,
+            systemInstruction=system,
+        )
 
         t0 = time.monotonic()
         try:
@@ -59,10 +63,11 @@ class GeminiProvider(LLMProvider):
         latency_ms = int((time.monotonic() - t0) * 1000)
 
         raw = resp.text or ""
-        text, mood = parse_mood(raw)
+        text, kaomoji, mood = parse_llm_json(raw)
         usage = getattr(resp, "usage_metadata", None)
         return LLMReply(
             text=text,
+            kaomoji=kaomoji,
             mood=mood,
             raw=raw,
             latency_ms=latency_ms,

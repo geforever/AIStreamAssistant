@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from g_chan.chat.base import ChatAdapter, ChatHandler, ChatMessage
 from g_chan.llm.base import LLMMessage, LLMProvider, LLMReply, Mood
+from g_chan.tts.base import AudioSink, TTSAudio, TTSEngine
 
 
 class FakeLLM(LLMProvider):
@@ -43,12 +44,9 @@ class FakeChat(ChatAdapter):
         await self.handler(ChatMessage(user=user, body=body, raw=f"@G酱 {body}"))
 
 
-def make_reply(text: str, mood: Mood = "happy") -> LLMReply:
-    return LLMReply(text=text, mood=mood, raw=text, latency_ms=42,
-                    tokens_in=10, tokens_out=20)
-
-
-from g_chan.tts.base import AudioSink, TTSAudio, TTSEngine
+def make_reply(text: str, mood: Mood = "happy", kaomoji: str = "") -> LLMReply:
+    return LLMReply(text=text, kaomoji=kaomoji, mood=mood, raw=text,
+                    latency_ms=42, tokens_in=10, tokens_out=20)
 
 
 class FakeTTS(TTSEngine):
