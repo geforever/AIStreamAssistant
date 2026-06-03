@@ -1,0 +1,26 @@
+twitch:
+  channel: "your_channel_name"
+  bot_username: "g_chan_bot"
+  trigger: "@G酱"
+
+rate_limit:
+  global_window_ms: 5000
+  busy_reply: "G酱我被你们搞的好晕啊XD"
+
+llm:
+  provider: "gemini"             # gemini | claude | openai | qwen (Phase 1 仅 gemini)
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+
+persona:
+  prompt_file: "prompts/default.md"
+  include_stream_context: true
+
+stream_context:
+  poll_interval_ms: 30000
+
+logging:
+  level: "info"                  # debug | info | warning | error
+  file: "logs/g-chan.log"
