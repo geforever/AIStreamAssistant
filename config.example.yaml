@@ -1,8 +1,10 @@
+# twich的bot设置
 twitch:
   channel: "your_channel_name"
   bot_username: "g_chan_bot"
   trigger: "@G酱"
 
+# bot繁忙设置
 rate_limit:
   global_window_ms: 5000
   busy_reply: "G酱我被你们搞的好晕啊XD"
@@ -14,6 +16,12 @@ llm:
   temperature: 0.9
   max_tokens: 300
   timeout_s: 10
+  # LLM 返回不合法 JSON / 空 text 时的回退回复(可选,缺省时用 pydantic 默认值)
+  fallback:
+    text: "诶?本小姐刚才走神了,你再说一遍嘛"
+    kaomoji: "(=ω=)"
+    # 8 mood 之一: happy/angry/sad/surprised/shy/thinking/tsundere/dizzy
+    mood: "dizzy"
 
 persona:
   prompt_file: "prompts/default.md"

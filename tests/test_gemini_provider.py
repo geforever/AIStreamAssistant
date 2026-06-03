@@ -34,7 +34,10 @@ async def test_generate_parses_json_reply(monkeypatch):
         lambda api_key: fake_client,
     )
 
-    p = GeminiProvider(api_key="x", model="gemini-2.5-flash")
+    p = GeminiProvider(
+        api_key="x", model="gemini-2.5-flash",
+        fallback_text="FB", fallback_kaomoji="FBK", fallback_mood="dizzy",
+    )
     reply = await p.generate(
         [LLMMessage("system", "你是 G 酱"), LLMMessage("user", "嗨")],
     )
@@ -62,7 +65,10 @@ async def test_generate_uses_json_mode_and_schema(monkeypatch):
         lambda api_key: fake_client,
     )
 
-    p = GeminiProvider(api_key="x", model="gemini-2.5-flash")
+    p = GeminiProvider(
+        api_key="x", model="gemini-2.5-flash",
+        fallback_text="FB", fallback_kaomoji="FBK", fallback_mood="dizzy",
+    )
     await p.generate([LLMMessage("user", "嗨")])
 
     cfg = captured["config"]
@@ -100,7 +106,10 @@ async def test_generate_handles_kaomoji_omission(monkeypatch):
         lambda api_key: fake_client,
     )
 
-    p = GeminiProvider(api_key="x", model="gemini-2.5-flash")
+    p = GeminiProvider(
+        api_key="x", model="gemini-2.5-flash",
+        fallback_text="FB", fallback_kaomoji="FBK", fallback_mood="dizzy",
+    )
     reply = await p.generate([LLMMessage("user", "嗨")])
     assert reply.text == "好啊"
     assert reply.kaomoji == ""
@@ -118,9 +127,34 @@ async def test_generate_timeout_raises(monkeypatch):
         lambda api_key: fake_client,
     )
 
-    p = GeminiProvider(api_key="x", model="gemini-2.5-flash")
+    p = GeminiProvider(
+        api_key="x", model="gemini-2.5-flash",
+        fallback_text="FB", fallback_kaomoji="FBK", fallback_mood="dizzy",
+    )
     with pytest.raises(LLMTimeoutError):
         await p.generate(
             [LLMMessage("user", "嗨")],
             timeout_s=0.05,
         )
+
+
+@pytest.mark.asyncio
+async def test_generate_uses_configured_fallback_on_bad_json(monkeypatch):
+    """模拟 LLM 返回残破 JSON — provider 应该用注入的 fallback 三元组。"""
+    fake_client = MagicMock()
+    fake_client.aio.models.generate_content = AsyncMock(
+        return_value=_fake_response('{"text')  # 截断
+    )
+    monkeypatch.setattr(
+        "g_chan.llm.gemini.genai.Client",
+        lambda api_key: fake_client,
+    )
+
+    p = GeminiProvider(
+        api_key="x", model="gemini-2.5-flash",
+        fallback_text="custom走神文本", fallback_kaomoji="(°ロ°)", fallback_mood="dizzy",
+    )
+    reply = await p.generate([LLMMessage("user", "嗨")])
+    assert reply.text == "custom走神文本"
+    assert reply.kaomoji == "(°ロ°)"
+    assert reply.mood == "dizzy"

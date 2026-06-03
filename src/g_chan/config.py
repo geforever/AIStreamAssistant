@@ -9,6 +9,8 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
+from g_chan.llm.base import Mood
+
 LLMProviderName = Literal["gemini", "claude", "openai", "qwen"]
 
 
@@ -26,6 +28,13 @@ class RateLimitConfig(BaseModel):
     busy_reply: str = "G酱我被你们搞的好晕啊XD"
 
 
+class LLMFallbackConfig(BaseModel):
+    """LLM 返回不合法 JSON / 空 text 时使用的回退三元组。"""
+    text: str = "诶?本小姐刚才走神了,你再说一遍嘛"
+    kaomoji: str = "(=ω=)"
+    mood: Mood = "dizzy"
+
+
 class LLMConfig(BaseModel):
     provider: LLMProviderName
     model: str
@@ -33,6 +42,7 @@ class LLMConfig(BaseModel):
     max_tokens: int = 300
     timeout_s: float = 10.0
     api_key: str = Field(default="", description="from $<PROVIDER>_API_KEY")
+    fallback: LLMFallbackConfig = Field(default_factory=LLMFallbackConfig)
 
 
 class PersonaConfig(BaseModel):

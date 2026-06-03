@@ -1,4 +1,4 @@
-"""Gemini provider — google-genai 适配,使用 JSON mode + response_schema 约束输出。"""
+"""Gemini provider — google-genai 适配,使用 JSON mode + responseSchema 约束输出。"""
 from __future__ import annotations
 
 import asyncio
@@ -8,20 +8,32 @@ from google import genai
 from google.genai import types
 
 from g_chan.llm.base import (
-    LLM_OUTPUT_SCHEMA,
     LLMMessage,
     LLMProvider,
     LLMReply,
     LLMServerError,
     LLMTimeoutError,
+    Mood,
     parse_llm_json,
 )
+from g_chan.llm.schemas import CHAT_REPLY_SCHEMA
 
 
 class GeminiProvider(LLMProvider):
-    def __init__(self, api_key: str, model: str):
+    def __init__(
+        self,
+        *,
+        api_key: str,
+        model: str,
+        fallback_text: str,
+        fallback_kaomoji: str,
+        fallback_mood: Mood,
+    ):
         self._client = genai.Client(api_key=api_key)
         self._model = model
+        self._fallback_text = fallback_text
+        self._fallback_kaomoji = fallback_kaomoji
+        self._fallback_mood = fallback_mood
 
     async def generate(
         self,
@@ -38,12 +50,15 @@ class GeminiProvider(LLMProvider):
             for m in messages if m.role != "system"
         ]
         # google-genai 字段名是 camelCase。用显式 GenerateContentConfig 避免 dict 写法被忽略
+        # thinkingBudget=0 关闭 2.5 系列默认的内部推理 — 短聊场景不需要,
+        # 关掉可节省 token + 降低延迟,也避免 JSON 输出被 thinking 占用 token 截断
         config = types.GenerateContentConfig(
             temperature=temperature,
             maxOutputTokens=max_tokens,
             responseMimeType="application/json",
-            responseSchema=LLM_OUTPUT_SCHEMA,
+            responseSchema=CHAT_REPLY_SCHEMA,
             systemInstruction=system,
+            thinkingConfig=types.ThinkingConfig(thinkingBudget=0),
         )
 
         t0 = time.monotonic()
@@ -63,7 +78,12 @@ class GeminiProvider(LLMProvider):
         latency_ms = int((time.monotonic() - t0) * 1000)
 
         raw = resp.text or ""
-        text, kaomoji, mood = parse_llm_json(raw)
+        text, kaomoji, mood = parse_llm_json(
+            raw,
+            fallback_text=self._fallback_text,
+            fallback_kaomoji=self._fallback_kaomoji,
+            fallback_mood=self._fallback_mood,
+        )
         usage = getattr(resp, "usage_metadata", None)
         return LLMReply(
             text=text,
