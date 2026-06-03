@@ -75,6 +75,9 @@ async def amain() -> int:
         chat=chat, llm=llm, persona=persona, stream_ctx=sctx,
         rate_limit_ms=cfg.rate_limit.global_window_ms,
         busy_reply=cfg.rate_limit.busy_reply,
+        fallback_text=cfg.llm.fallback.text,
+        fallback_kaomoji=cfg.llm.fallback.kaomoji,
+        fallback_mood=cfg.llm.fallback.mood,
         tts=tts_engine,
         audio_sink=audio_sink,
     )

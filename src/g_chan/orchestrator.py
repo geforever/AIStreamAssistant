@@ -5,7 +5,7 @@ import logging
 from typing import Protocol
 
 from g_chan.chat.base import ChatAdapter, ChatMessage
-from g_chan.llm.base import LLMError, LLMMessage, LLMProvider
+from g_chan.llm.base import LLMError, LLMMessage, LLMProvider, LLMReply, Mood
 from g_chan.persona.loader import StreamContext
 from g_chan.rate_limiter import RateLimiter
 from g_chan.tts.base import AudioSink, TTSEngine, TTSError
@@ -21,9 +21,6 @@ class StreamCtxLike(Protocol):
     def current(self) -> StreamContext | None: ...
 
 
-_FALLBACK_TEXT = "诶呀脑子卡了一下,你再说一遍?"
-
-
 class Orchestrator:
     def __init__(
         self,
@@ -34,6 +31,9 @@ class Orchestrator:
         stream_ctx: StreamCtxLike,
         rate_limit_ms: int,
         busy_reply: str,
+        fallback_text: str,
+        fallback_kaomoji: str,
+        fallback_mood: Mood,
         tts: TTSEngine | None = None,
         audio_sink: AudioSink | None = None,
     ):
@@ -43,6 +43,9 @@ class Orchestrator:
         self._stream_ctx = stream_ctx
         self._rl = RateLimiter(window_ms=rate_limit_ms)
         self._busy_reply = busy_reply
+        self._fallback_text = fallback_text
+        self._fallback_kaomoji = fallback_kaomoji
+        self._fallback_mood = fallback_mood
         self._tts = tts
         self._audio_sink = audio_sink
 
@@ -60,9 +63,18 @@ class Orchestrator:
         try:
             reply = await self._llm.generate(self._build_messages(msg))
         except LLMError as e:
-            log.warning("llm failed: %s", e)
-            await self._chat.send(f"@{msg.user} {_FALLBACK_TEXT}")
-            return
+            # LLM 调用本身失败(超时、网络、5xx)→ 构造 fallback LLMReply 走完整路径。
+            # 这样 fallback 路径也有 TTS 和 mood,跟"LLM 返回了 bad JSON"的回退体验一致。
+            log.warning("llm failed: %s — using fallback reply", e)
+            reply = LLMReply(
+                text=self._fallback_text,
+                kaomoji=self._fallback_kaomoji,
+                mood=self._fallback_mood,
+                raw="",
+                latency_ms=0,
+                tokens_in=0,
+                tokens_out=0,
+            )
 
         log.info(
             "reply: mood=%s latency=%dms tokens=%d/%d text=%r kaomoji=%r",

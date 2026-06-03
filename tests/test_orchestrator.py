@@ -20,6 +20,17 @@ class FixedStreamCtx:
         return self._ctx
 
 
+# 测试用默认 fallback — 跟生产配置无关,测试只关心"fallback 触发时这个值会被用上"
+_FB_TEXT = "FB_TEXT"
+_FB_KAOMOJI = "FB_KAOMOJI"
+_FB_MOOD = "dizzy"
+_FB_KWARGS = {
+    "fallback_text": _FB_TEXT,
+    "fallback_kaomoji": _FB_KAOMOJI,
+    "fallback_mood": _FB_MOOD,
+}
+
+
 @pytest.mark.asyncio
 async def test_happy_path_sends_at_reply():
     chat = FakeChat()
@@ -32,6 +43,7 @@ async def test_happy_path_sends_at_reply():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+    **_FB_KWARGS,
     )
     orch.wire()
 
@@ -54,6 +66,7 @@ async def test_rate_limited_sends_busy_reply():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=60_000,   # 大窗口,第 2 条必拒
         busy_reply="晕XD",
+    **_FB_KWARGS,
     )
     orch.wire()
     await chat.emit("alice", "嗨")
@@ -63,7 +76,8 @@ async def test_rate_limited_sends_busy_reply():
 
 
 @pytest.mark.asyncio
-async def test_llm_failure_falls_back():
+async def test_llm_failure_uses_configured_fallback():
+    """LLM 调用失败 → 用 fallback 三元组拼成 LLMReply,chat 发送 text + kaomoji。"""
     chat = FakeChat()
     llm = FakeLLM()
     llm.should_raise = LLMTimeoutError("boom")
@@ -72,13 +86,12 @@ async def test_llm_failure_falls_back():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+    **_FB_KWARGS,
     )
     orch.wire()
     await chat.emit("alice", "嗨")
-    assert len(chat.sent) == 1
-    msg = chat.sent[0]
-    assert msg.startswith("@alice ")
-    assert "卡了一下" in msg or "脑子" in msg  # fallback 文本特征
+    # chat: fallback_text + fallback_kaomoji 拼接
+    assert chat.sent == [f"@alice {_FB_TEXT} {_FB_KAOMOJI}"]
 
 
 @pytest.mark.asyncio
@@ -97,6 +110,7 @@ async def test_passes_stream_context_to_persona(monkeypatch):
         stream_ctx=FixedStreamCtx(ctx),
         rate_limit_ms=0,
         busy_reply="...",
+    **_FB_KWARGS,
     )
     orch.wire()
     await chat.emit("alice", "在玩啥?")
@@ -114,6 +128,7 @@ async def test_no_tts_when_engine_not_provided():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+    **_FB_KWARGS,
     )
     orch.wire()
     await chat.emit("alice", "嗨")
@@ -132,6 +147,7 @@ async def test_tts_synthesized_and_saved_in_parallel_with_chat():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+        **_FB_KWARGS,
         tts=tts,
         audio_sink=sink,
     )
@@ -158,6 +174,7 @@ async def test_tts_failure_does_not_block_chat():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+        **_FB_KWARGS,
         tts=tts,
         audio_sink=sink,
     )
@@ -182,6 +199,7 @@ async def test_sink_failure_does_not_block_chat():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+        **_FB_KWARGS,
         tts=tts,
         audio_sink=sink,
     )
@@ -193,8 +211,8 @@ async def test_sink_failure_does_not_block_chat():
 
 
 @pytest.mark.asyncio
-async def test_no_tts_when_llm_fails():
-    """LLM 失败时只发 fallback chat,不调 TTS(没有有效回复内容)。"""
+async def test_llm_failure_still_runs_tts_with_fallback():
+    """LLM 失败时也走 TTS 路径 — fallback text 也会被朗读 + 写音频文件。"""
     chat = FakeChat()
     llm = FakeLLM()
     llm.should_raise = LLMTimeoutError("llm boom")
@@ -205,14 +223,15 @@ async def test_no_tts_when_llm_fails():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+        **_FB_KWARGS,
         tts=tts,
         audio_sink=sink,
     )
     orch.wire()
     await chat.emit("alice", "嗨")
-    assert len(chat.sent) == 1
-    assert tts.calls == []
-    assert sink.writes == []
+    assert chat.sent == [f"@alice {_FB_TEXT} {_FB_KAOMOJI}"]
+    assert tts.calls == [_FB_TEXT]          # TTS 也朗读了 fallback text
+    assert len(sink.writes) == 1            # 也写了 mp3 文件
 
 
 @pytest.mark.asyncio
@@ -252,6 +271,7 @@ async def test_chat_send_happens_after_tts_completes():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+        **_FB_KWARGS,
         tts=tts,
         audio_sink=sink,
     )
@@ -277,6 +297,7 @@ async def test_chat_appends_kaomoji_tts_uses_text_only():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+        **_FB_KWARGS,
         tts=tts,
         audio_sink=sink,
     )
@@ -300,6 +321,7 @@ async def test_chat_no_trailing_space_when_kaomoji_empty():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+    **_FB_KWARGS,
     )
     orch.wire()
     await chat.emit("alice", "嗨")
@@ -319,6 +341,7 @@ async def test_tts_skipped_when_text_is_blank():
         stream_ctx=FixedStreamCtx(None),
         rate_limit_ms=0,
         busy_reply="...",
+        **_FB_KWARGS,
         tts=tts,
         audio_sink=sink,
     )
