@@ -22,6 +22,8 @@ llm:
     kaomoji: "(=ω=)"
     # 8 mood 之一: happy/angry/sad/surprised/shy/thinking/tsundere/dizzy
     mood: "dizzy"
+    # 回退语言 — 决定 TTS 用哪个声线念 fallback text。zh/en/ja
+    language: "ja"
 
 persona:
   prompt_file: "prompts/default.md"
@@ -32,8 +34,12 @@ stream_context:
 
 tts:
   enabled: true
-  # 备选: zh-CN-XiaoxiaoNeural / zh-CN-XiaoshuangNeural / ja-JP-NanamiNeural
-  voice: "zh-CN-XiaoyiNeural"
+  # 每个语言对应的 Edge TTS voice 名称。zh 备选: XiaoxiaoNeural/XiaoshuangNeural/XiaohanNeural
+  # 完整 voice 列表: https://learn.microsoft.com/azure/ai-services/speech-service/language-support
+  voices:
+    zh: "zh-CN-XiaoyiNeural"
+    en: "en-US-AvaNeural"
+    ja: "ja-JP-NanamiNeural"
   rate: "+10%"
   pitch: "+10Hz"
   output_dir: "out"

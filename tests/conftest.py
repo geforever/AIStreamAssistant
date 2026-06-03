@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from g_chan.chat.base import ChatAdapter, ChatHandler, ChatMessage
-from g_chan.llm.base import LLMMessage, LLMProvider, LLMReply, Mood
+from g_chan.llm.base import Language, LLMMessage, LLMProvider, LLMReply, Mood
 from g_chan.tts.base import AudioSink, TTSAudio, TTSEngine
 
 
@@ -44,21 +44,33 @@ class FakeChat(ChatAdapter):
         await self.handler(ChatMessage(user=user, body=body, raw=f"@G酱 {body}"))
 
 
-def make_reply(text: str, mood: Mood = "happy", kaomoji: str = "") -> LLMReply:
-    return LLMReply(text=text, kaomoji=kaomoji, mood=mood, raw=text,
-                    latency_ms=42, tokens_in=10, tokens_out=20)
+def make_reply(
+    text: str,
+    mood: Mood = "happy",
+    kaomoji: str = "",
+    language: Language = "zh",
+) -> LLMReply:
+    return LLMReply(text=text, kaomoji=kaomoji, mood=mood, language=language,
+                    raw=text, latency_ms=42, tokens_in=10, tokens_out=20)
 
 
 class FakeTTS(TTSEngine):
     def __init__(self):
-        self.calls: list[str] = []
+        # 每次 synthesize 调用记录 (text, language) 元组
+        self.calls: list[tuple[str, Language]] = []
         self.next_audio: TTSAudio | None = TTSAudio(
             data=b"FAKEAUDIO", format="mp3", voice="fake", duration_ms=None
         )
         self.should_raise: Exception | None = None
 
-    async def synthesize(self, text: str, *, timeout_s: float = 10.0) -> TTSAudio:
-        self.calls.append(text)
+    async def synthesize(
+        self,
+        text: str,
+        *,
+        language: Language = "zh",
+        timeout_s: float = 10.0,
+    ) -> TTSAudio:
+        self.calls.append((text, language))
         if self.should_raise:
             raise self.should_raise
         assert self.next_audio is not None

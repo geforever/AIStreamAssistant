@@ -5,7 +5,7 @@ import logging
 from typing import Protocol
 
 from g_chan.chat.base import ChatAdapter, ChatMessage
-from g_chan.llm.base import LLMError, LLMMessage, LLMProvider, LLMReply, Mood
+from g_chan.llm.base import Language, LLMError, LLMMessage, LLMProvider, LLMReply, Mood
 from g_chan.persona.loader import StreamContext
 from g_chan.rate_limiter import RateLimiter
 from g_chan.tts.base import AudioSink, TTSEngine, TTSError
@@ -34,6 +34,7 @@ class Orchestrator:
         fallback_text: str,
         fallback_kaomoji: str,
         fallback_mood: Mood,
+        fallback_language: Language,
         tts: TTSEngine | None = None,
         audio_sink: AudioSink | None = None,
     ):
@@ -46,6 +47,7 @@ class Orchestrator:
         self._fallback_text = fallback_text
         self._fallback_kaomoji = fallback_kaomoji
         self._fallback_mood = fallback_mood
+        self._fallback_language = fallback_language
         self._tts = tts
         self._audio_sink = audio_sink
 
@@ -70,6 +72,7 @@ class Orchestrator:
                 text=self._fallback_text,
                 kaomoji=self._fallback_kaomoji,
                 mood=self._fallback_mood,
+                language=self._fallback_language,
                 raw="",
                 latency_ms=0,
                 tokens_in=0,
@@ -77,26 +80,27 @@ class Orchestrator:
             )
 
         log.info(
-            "reply: mood=%s latency=%dms tokens=%d/%d text=%r kaomoji=%r",
-            reply.mood, reply.latency_ms, reply.tokens_in, reply.tokens_out,
+            "reply: mood=%s lang=%s latency=%dms tokens=%d/%d text=%r kaomoji=%r",
+            reply.mood, reply.language, reply.latency_ms,
+            reply.tokens_in, reply.tokens_out,
             reply.text, reply.kaomoji,
         )
 
-        # 串行: 先 TTS(只用 text,不含颜文字),完成后再发 chat(text + kaomoji 拼接)。
+        # 串行: 先 TTS(按 reply.language 选 voice),完成后再发 chat。
         # 目的:让观众看到文字的同时听到声音,不会出现"文字先到、声音晚 1s"的脱节感。
         # TTS 任何异常都被 _do_tts 内部吞,不影响 chat 路径。
-        await self._do_tts(reply.text, user=msg.user)
+        await self._do_tts(reply.text, language=reply.language, user=msg.user)
         chat_body = f"{reply.text} {reply.kaomoji}".strip() if reply.kaomoji else reply.text
         await self._chat.send(f"@{msg.user} {chat_body}")
 
-    async def _do_tts(self, text: str, *, user: str) -> None:
+    async def _do_tts(self, text: str, *, language: Language, user: str) -> None:
         if self._tts is None or self._audio_sink is None:
             return
         if not text.strip():
             log.info("tts text is empty, skipping synthesis")
             return
         try:
-            audio = await self._tts.synthesize(text)
+            audio = await self._tts.synthesize(text, language=language)
         except TTSError as e:
             log.warning("tts synth failed: %s", e)
             return

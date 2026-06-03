@@ -15,6 +15,7 @@ def create_provider(cfg: LLMConfig) -> LLMProvider:
             fallback_text=cfg.fallback.text,
             fallback_kaomoji=cfg.fallback.kaomoji,
             fallback_mood=cfg.fallback.mood,
+            fallback_language=cfg.fallback.language,
         )
     if name in ("claude", "openai", "qwen"):
         raise NotImplementedError(

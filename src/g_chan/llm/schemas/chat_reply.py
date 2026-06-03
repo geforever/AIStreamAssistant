@@ -8,7 +8,7 @@ across locales — model behavior on schema descriptions is best in English.
 """
 from __future__ import annotations
 
-from g_chan.llm.base import MOOD_VALUES
+from g_chan.llm.base import LANGUAGE_VALUES, MOOD_VALUES
 
 CHAT_REPLY_SCHEMA: dict = {
     "type": "object",
@@ -38,6 +38,17 @@ CHAT_REPLY_SCHEMA: dict = {
                 "Must be one of the listed enum values."
             ),
         },
+        "language": {
+            "type": "string",
+            "enum": list(LANGUAGE_VALUES),
+            "description": (
+                "Language code of the 'text' field; used to pick the TTS voice. "
+                "'zh' for Chinese (Mandarin), 'en' for English, 'ja' for Japanese. "
+                "Mirror the viewer's language: when the viewer writes English, "
+                "reply in English ('en'); when in Japanese, reply in Japanese ('ja'); "
+                "otherwise reply in Chinese ('zh')."
+            ),
+        },
     },
-    "required": ["text", "mood"],
+    "required": ["text", "mood", "language"],
 }

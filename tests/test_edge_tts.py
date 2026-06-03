@@ -6,6 +6,12 @@ import pytest
 from g_chan.tts.base import TTSTimeoutError
 from g_chan.tts.edge import EdgeTTSEngine
 
+_VOICES = {
+    "zh": "zh-CN-XiaoyiNeural",
+    "en": "en-US-AvaNeural",
+    "ja": "ja-JP-NanamiNeural",
+}
+
 
 def _fake_communicate(chunks: list[dict]):
     """构造一个 fake edge_tts.Communicate 实例,stream() 异步产出指定 chunks。"""
@@ -33,15 +39,34 @@ async def test_synthesize_concatenates_audio_chunks(monkeypatch):
         lambda text, voice, rate, pitch: fake,
     )
 
-    engine = EdgeTTSEngine(voice="zh-CN-XiaoyiNeural", rate="+10%", pitch="+5Hz")
-    audio = await engine.synthesize("你好世界")
+    engine = EdgeTTSEngine(voices=_VOICES, rate="+10%", pitch="+5Hz")
+    audio = await engine.synthesize("你好世界", language="zh")
     assert audio.data == b"AAABBBCCC"
     assert audio.format == "mp3"
-    assert audio.voice == "zh-CN-XiaoyiNeural"
+    assert audio.voice == _VOICES["zh"]
 
 
 @pytest.mark.asyncio
-async def test_synthesize_passes_voice_rate_pitch(monkeypatch):
+async def test_synthesize_picks_voice_per_language(monkeypatch):
+    """同一个 engine 不同 language 调用 → 选不同 voice。"""
+    captured: list[str] = []
+
+    def fake_ctor(text, voice, rate, pitch):
+        captured.append(voice)
+        return _fake_communicate([{"type": "audio", "data": b"X"}])
+
+    monkeypatch.setattr("g_chan.tts.edge.edge_tts.Communicate", fake_ctor)
+
+    engine = EdgeTTSEngine(voices=_VOICES)
+    await engine.synthesize("你好", language="zh")
+    await engine.synthesize("hello", language="en")
+    await engine.synthesize("こんにちは", language="ja")
+
+    assert captured == [_VOICES["zh"], _VOICES["en"], _VOICES["ja"]]
+
+
+@pytest.mark.asyncio
+async def test_synthesize_passes_text_rate_pitch(monkeypatch):
     captured = {}
 
     def fake_ctor(text, voice, rate, pitch):
@@ -53,14 +78,35 @@ async def test_synthesize_passes_voice_rate_pitch(monkeypatch):
 
     monkeypatch.setattr("g_chan.tts.edge.edge_tts.Communicate", fake_ctor)
 
-    engine = EdgeTTSEngine(voice="ja-JP-NanamiNeural", rate="-5%", pitch="+0Hz")
-    await engine.synthesize("こんにちは")
+    engine = EdgeTTSEngine(voices=_VOICES, rate="-5%", pitch="+0Hz")
+    await engine.synthesize("こんにちは", language="ja")
     assert captured == {
         "text": "こんにちは",
-        "voice": "ja-JP-NanamiNeural",
+        "voice": _VOICES["ja"],
         "rate": "-5%",
         "pitch": "+0Hz",
     }
+
+
+@pytest.mark.asyncio
+async def test_synthesize_falls_back_when_language_voice_missing(monkeypatch):
+    """voices 没配某语言时退到 dict 第一个 voice + 打 warn。"""
+    captured: list[str] = []
+
+    def fake_ctor(text, voice, rate, pitch):
+        captured.append(voice)
+        return _fake_communicate([{"type": "audio", "data": b"X"}])
+
+    monkeypatch.setattr("g_chan.tts.edge.edge_tts.Communicate", fake_ctor)
+
+    engine = EdgeTTSEngine(voices={"zh": "zh-CN-XiaoyiNeural"})
+    await engine.synthesize("hello", language="en")   # en 没配
+    assert captured == ["zh-CN-XiaoyiNeural"]
+
+
+def test_engine_requires_at_least_one_voice():
+    with pytest.raises(ValueError, match="at least one voice"):
+        EdgeTTSEngine(voices={})
 
 
 @pytest.mark.asyncio
@@ -78,9 +124,9 @@ async def test_synthesize_timeout_raises(monkeypatch):
         lambda text, voice, rate, pitch: fake,
     )
 
-    engine = EdgeTTSEngine(voice="zh-CN-XiaoyiNeural")
+    engine = EdgeTTSEngine(voices=_VOICES)
     with pytest.raises(TTSTimeoutError):
-        await engine.synthesize("hello", timeout_s=0.05)
+        await engine.synthesize("hello", language="en", timeout_s=0.05)
 
 
 @pytest.mark.asyncio
@@ -94,7 +140,7 @@ async def test_synthesize_returns_empty_when_no_audio_chunks(monkeypatch):
         lambda text, voice, rate, pitch: fake,
     )
 
-    engine = EdgeTTSEngine(voice="zh-CN-XiaoyiNeural")
-    audio = await engine.synthesize("x")
+    engine = EdgeTTSEngine(voices=_VOICES)
+    audio = await engine.synthesize("x", language="zh")
     assert audio.data == b""
     assert audio.format == "mp3"

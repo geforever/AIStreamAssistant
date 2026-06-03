@@ -9,7 +9,7 @@ import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-from g_chan.llm.base import Mood
+from g_chan.llm.base import Language, Mood
 
 LLMProviderName = Literal["gemini", "claude", "openai", "qwen"]
 
@@ -29,10 +29,11 @@ class RateLimitConfig(BaseModel):
 
 
 class LLMFallbackConfig(BaseModel):
-    """LLM 返回不合法 JSON / 空 text 时使用的回退三元组。"""
+    """LLM 返回不合法 JSON / 空 text / 缺字段时使用的回退四元组。"""
     text: str = "诶?本小姐刚才走神了,你再说一遍嘛"
     kaomoji: str = "(=ω=)"
     mood: Mood = "dizzy"
+    language: Language = "zh"
 
 
 class LLMConfig(BaseModel):
@@ -54,9 +55,17 @@ class StreamContextConfig(BaseModel):
     poll_interval_ms: int = 30000
 
 
+def _default_voices() -> dict[Language, str]:
+    return {
+        "zh": "zh-CN-XiaoyiNeural",
+        "en": "en-US-AvaNeural",
+        "ja": "ja-JP-NanamiNeural",
+    }
+
+
 class TTSConfig(BaseModel):
     enabled: bool = True
-    voice: str = "zh-CN-XiaoyiNeural"
+    voices: dict[Language, str] = Field(default_factory=_default_voices)
     rate: str = "+0%"
     pitch: str = "+0Hz"
     output_dir: str = "out"

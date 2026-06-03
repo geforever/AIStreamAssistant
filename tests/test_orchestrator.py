@@ -24,10 +24,12 @@ class FixedStreamCtx:
 _FB_TEXT = "FB_TEXT"
 _FB_KAOMOJI = "FB_KAOMOJI"
 _FB_MOOD = "dizzy"
+_FB_LANG = "zh"
 _FB_KWARGS = {
     "fallback_text": _FB_TEXT,
     "fallback_kaomoji": _FB_KAOMOJI,
     "fallback_mood": _FB_MOOD,
+    "fallback_language": _FB_LANG,
 }
 
 
@@ -154,7 +156,7 @@ async def test_tts_synthesized_and_saved_in_parallel_with_chat():
     orch.wire()
     await chat.emit("alice", "嗨")
     assert chat.sent == ["@alice 哼,本小姐才不要呢"]
-    assert tts.calls == ["哼,本小姐才不要呢"]
+    assert tts.calls == [("哼,本小姐才不要呢", "zh")]
     assert len(sink.writes) == 1
     audio, user = sink.writes[0]
     assert audio.data == b"FAKEAUDIO"
@@ -206,7 +208,7 @@ async def test_sink_failure_does_not_block_chat():
     orch.wire()
     await chat.emit("alice", "嗨")
     assert chat.sent == ["@alice 好啊"]
-    assert tts.calls == ["好啊"]   # synth 成功了
+    assert tts.calls == [("好啊", "zh")]   # synth 成功了
     # sink 写文件失败了,但 chat 路径不受影响
 
 
@@ -230,7 +232,7 @@ async def test_llm_failure_still_runs_tts_with_fallback():
     orch.wire()
     await chat.emit("alice", "嗨")
     assert chat.sent == [f"@alice {_FB_TEXT} {_FB_KAOMOJI}"]
-    assert tts.calls == [_FB_TEXT]          # TTS 也朗读了 fallback text
+    assert tts.calls == [(_FB_TEXT, "zh")]          # TTS 也朗读了 fallback text
     assert len(sink.writes) == 1            # 也写了 mp3 文件
 
 
@@ -248,9 +250,9 @@ async def test_chat_send_happens_after_tts_completes():
     orig_send = chat.send
     orig_write = sink.write
 
-    async def synth(text, *, timeout_s=10.0):
+    async def synth(text, *, language="zh", timeout_s=10.0):
         events.append("tts_start")
-        result = await orig_synth(text, timeout_s=timeout_s)
+        result = await orig_synth(text, language=language, timeout_s=timeout_s)
         events.append("tts_done")
         return result
 
@@ -307,7 +309,7 @@ async def test_chat_appends_kaomoji_tts_uses_text_only():
     # chat: text + kaomoji 拼接
     assert chat.sent == ["@alice 哼,本小姐才没有 (›´ω`‹)"]
     # tts: 只用 text
-    assert tts.calls == ["哼,本小姐才没有"]
+    assert tts.calls == [("哼,本小姐才没有", "zh")]
 
 
 @pytest.mark.asyncio

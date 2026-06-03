@@ -8,6 +8,7 @@ from google import genai
 from google.genai import types
 
 from g_chan.llm.base import (
+    Language,
     LLMMessage,
     LLMProvider,
     LLMReply,
@@ -28,12 +29,14 @@ class GeminiProvider(LLMProvider):
         fallback_text: str,
         fallback_kaomoji: str,
         fallback_mood: Mood,
+        fallback_language: Language,
     ):
         self._client = genai.Client(api_key=api_key)
         self._model = model
         self._fallback_text = fallback_text
         self._fallback_kaomoji = fallback_kaomoji
         self._fallback_mood = fallback_mood
+        self._fallback_language = fallback_language
 
     async def generate(
         self,
@@ -78,17 +81,19 @@ class GeminiProvider(LLMProvider):
         latency_ms = int((time.monotonic() - t0) * 1000)
 
         raw = resp.text or ""
-        text, kaomoji, mood = parse_llm_json(
+        text, kaomoji, mood, language = parse_llm_json(
             raw,
             fallback_text=self._fallback_text,
             fallback_kaomoji=self._fallback_kaomoji,
             fallback_mood=self._fallback_mood,
+            fallback_language=self._fallback_language,
         )
         usage = getattr(resp, "usage_metadata", None)
         return LLMReply(
             text=text,
             kaomoji=kaomoji,
             mood=mood,
+            language=language,
             raw=raw,
             latency_ms=latency_ms,
             tokens_in=getattr(usage, "prompt_token_count", 0) if usage else 0,

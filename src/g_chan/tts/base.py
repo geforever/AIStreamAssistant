@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from g_chan.llm.base import Language
+
 
 @dataclass
 class TTSAudio:
@@ -22,7 +24,13 @@ class TTSServerError(TTSError): ...
 
 class TTSEngine(ABC):
     @abstractmethod
-    async def synthesize(self, text: str, *, timeout_s: float = 10.0) -> TTSAudio: ...
+    async def synthesize(
+        self,
+        text: str,
+        *,
+        language: Language = "zh",
+        timeout_s: float = 10.0,
+    ) -> TTSAudio: ...
 
 
 class AudioSink(Protocol):

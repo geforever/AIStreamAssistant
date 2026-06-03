@@ -138,7 +138,10 @@ stream_context:
   poll_interval_ms: 30000
 tts:
   enabled: true
-  voice: "zh-CN-XiaoyiNeural"
+  voices:
+    zh: "zh-CN-XiaoyiNeural"
+    en: "en-US-AvaNeural"
+    ja: "ja-JP-NanamiNeural"
   rate: "+10%"
   pitch: "+5Hz"
   output_dir: "out"
@@ -149,7 +152,9 @@ logging:
 """)
     cfg = load_config(cfg_path)
     assert cfg.tts.enabled is True
-    assert cfg.tts.voice == "zh-CN-XiaoyiNeural"
+    assert cfg.tts.voices["zh"] == "zh-CN-XiaoyiNeural"
+    assert cfg.tts.voices["en"] == "en-US-AvaNeural"
+    assert cfg.tts.voices["ja"] == "ja-JP-NanamiNeural"
     assert cfg.tts.rate == "+10%"
     assert cfg.tts.pitch == "+5Hz"
     assert cfg.tts.output_dir == "out"
@@ -187,5 +192,7 @@ logging:
 """)
     cfg = load_config(cfg_path)
     assert cfg.tts.enabled is True
-    assert cfg.tts.voice == "zh-CN-XiaoyiNeural"
+    assert cfg.tts.voices["zh"] == "zh-CN-XiaoyiNeural"
+    assert cfg.tts.voices["en"] == "en-US-AvaNeural"
+    assert cfg.tts.voices["ja"] == "ja-JP-NanamiNeural"
     assert cfg.tts.output_dir == "out"

@@ -61,13 +61,13 @@ async def amain() -> int:
     audio_sink: FileAudioSink | None = None
     if cfg.tts.enabled:
         tts_engine = EdgeTTSEngine(
-            voice=cfg.tts.voice,
+            voices=cfg.tts.voices,
             rate=cfg.tts.rate,
             pitch=cfg.tts.pitch,
         )
         audio_sink = FileAudioSink(output_dir=cfg.tts.output_dir)
-        log.info("tts enabled — voice=%s, output_dir=%s",
-                 cfg.tts.voice, cfg.tts.output_dir)
+        log.info("tts enabled — voices=%s, output_dir=%s",
+                 cfg.tts.voices, cfg.tts.output_dir)
     else:
         log.info("tts disabled (config.tts.enabled=false)")
 
@@ -78,6 +78,7 @@ async def amain() -> int:
         fallback_text=cfg.llm.fallback.text,
         fallback_kaomoji=cfg.llm.fallback.kaomoji,
         fallback_mood=cfg.llm.fallback.mood,
+        fallback_language=cfg.llm.fallback.language,
         tts=tts_engine,
         audio_sink=audio_sink,
     )
