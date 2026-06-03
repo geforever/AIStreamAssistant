@@ -46,3 +46,34 @@ class FakeChat(ChatAdapter):
 def make_reply(text: str, mood: Mood = "happy") -> LLMReply:
     return LLMReply(text=text, mood=mood, raw=text, latency_ms=42,
                     tokens_in=10, tokens_out=20)
+
+
+from g_chan.tts.base import AudioSink, TTSAudio, TTSEngine
+
+
+class FakeTTS(TTSEngine):
+    def __init__(self):
+        self.calls: list[str] = []
+        self.next_audio: TTSAudio | None = TTSAudio(
+            data=b"FAKEAUDIO", format="mp3", voice="fake", duration_ms=None
+        )
+        self.should_raise: Exception | None = None
+
+    async def synthesize(self, text: str, *, timeout_s: float = 10.0) -> TTSAudio:
+        self.calls.append(text)
+        if self.should_raise:
+            raise self.should_raise
+        assert self.next_audio is not None
+        return self.next_audio
+
+
+class FakeAudioSink(AudioSink):
+    def __init__(self):
+        self.writes: list[tuple[TTSAudio, str]] = []
+        self.should_raise: Exception | None = None
+
+    async def write(self, audio: TTSAudio, *, user: str) -> str:
+        self.writes.append((audio, user))
+        if self.should_raise:
+            raise self.should_raise
+        return f"/fake/path/{user}.mp3"

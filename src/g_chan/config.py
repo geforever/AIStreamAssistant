@@ -44,6 +44,15 @@ class StreamContextConfig(BaseModel):
     poll_interval_ms: int = 30000
 
 
+class TTSConfig(BaseModel):
+    enabled: bool = True
+    voice: str = "zh-CN-XiaoyiNeural"
+    rate: str = "+0%"
+    pitch: str = "+0Hz"
+    output_dir: str = "out"
+    timeout_s: float = 10.0
+
+
 class LoggingConfig(BaseModel):
     level: Literal["debug", "info", "warning", "error"] = "info"
     file: str = "logs/g-chan.log"
@@ -55,6 +64,7 @@ class AppConfig(BaseModel):
     llm: LLMConfig
     persona: PersonaConfig
     stream_context: StreamContextConfig
+    tts: TTSConfig = Field(default_factory=TTSConfig)
     logging: LoggingConfig
 
 

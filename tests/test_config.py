@@ -110,3 +110,82 @@ logging:
 """)
     with pytest.raises(ValueError, match="unknown llm.provider"):
         load_config(cfg_path)
+
+
+def test_loads_tts_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_OAUTH", "oauth:abc")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "cid")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "csec")
+    monkeypatch.setenv("GEMINI_API_KEY", "gkey")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+rate_limit:
+  global_window_ms: 5000
+  busy_reply: "晕"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+  include_stream_context: true
+stream_context:
+  poll_interval_ms: 30000
+tts:
+  enabled: true
+  voice: "zh-CN-XiaoyiNeural"
+  rate: "+10%"
+  pitch: "+5Hz"
+  output_dir: "out"
+  timeout_s: 10
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.tts.enabled is True
+    assert cfg.tts.voice == "zh-CN-XiaoyiNeural"
+    assert cfg.tts.rate == "+10%"
+    assert cfg.tts.pitch == "+5Hz"
+    assert cfg.tts.output_dir == "out"
+    assert cfg.tts.timeout_s == 10
+
+
+def test_tts_defaults_when_section_missing(tmp_path, monkeypatch):
+    """tts: 块在 yaml 中可缺省 — 用默认值。"""
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+rate_limit:
+  global_window_ms: 5000
+  busy_reply: "晕"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+  include_stream_context: true
+stream_context:
+  poll_interval_ms: 30000
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.tts.enabled is True
+    assert cfg.tts.voice == "zh-CN-XiaoyiNeural"
+    assert cfg.tts.output_dir == "out"

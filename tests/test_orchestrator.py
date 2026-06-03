@@ -101,3 +101,118 @@ async def test_passes_stream_context_to_persona(monkeypatch):
     orch.wire()
     await chat.emit("alice", "在玩啥?")
     assert persona_called_with == [ctx]
+
+
+from tests.conftest import FakeAudioSink, FakeTTS
+
+
+@pytest.mark.asyncio
+async def test_no_tts_when_engine_not_provided():
+    """Phase 1 行为兼容 — 不传 tts/sink 时不应影响 chat 路径。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊~", mood="happy")
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+    assert chat.sent == ["@alice 好啊~"]
+
+
+@pytest.mark.asyncio
+async def test_tts_synthesized_and_saved_in_parallel_with_chat():
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("哼,本小姐才不要呢", mood="tsundere")
+    tts = FakeTTS()
+    sink = FakeAudioSink()
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+        tts=tts,
+        audio_sink=sink,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+    assert chat.sent == ["@alice 哼,本小姐才不要呢"]
+    assert tts.calls == ["哼,本小姐才不要呢"]
+    assert len(sink.writes) == 1
+    audio, user = sink.writes[0]
+    assert audio.data == b"FAKEAUDIO"
+    assert user == "alice"
+
+
+@pytest.mark.asyncio
+async def test_tts_failure_does_not_block_chat():
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊", mood="happy")
+    tts = FakeTTS()
+    tts.should_raise = RuntimeError("tts boom")
+    sink = FakeAudioSink()
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+        tts=tts,
+        audio_sink=sink,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+    # chat 路径必须完成
+    assert chat.sent == ["@alice 好啊"]
+    # sink 没被调用(synth 失败)
+    assert sink.writes == []
+
+
+@pytest.mark.asyncio
+async def test_sink_failure_does_not_block_chat():
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊", mood="happy")
+    tts = FakeTTS()
+    sink = FakeAudioSink()
+    sink.should_raise = OSError("disk full")
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+        tts=tts,
+        audio_sink=sink,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+    assert chat.sent == ["@alice 好啊"]
+    assert tts.calls == ["好啊"]   # synth 成功了
+    # sink 写文件失败了,但 chat 路径不受影响
+
+
+@pytest.mark.asyncio
+async def test_no_tts_when_llm_fails():
+    """LLM 失败时只发 fallback chat,不调 TTS(没有有效回复内容)。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.should_raise = LLMTimeoutError("llm boom")
+    tts = FakeTTS()
+    sink = FakeAudioSink()
+    orch = Orchestrator(
+        chat=chat, llm=llm, persona=FixedPersona(),
+        stream_ctx=FixedStreamCtx(None),
+        rate_limit_ms=0,
+        busy_reply="...",
+        tts=tts,
+        audio_sink=sink,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+    assert len(chat.sent) == 1
+    assert tts.calls == []
+    assert sink.writes == []

@@ -13,6 +13,8 @@ from g_chan.logging_setup import setup_logging
 from g_chan.orchestrator import Orchestrator
 from g_chan.persona.loader import PersonaLoader
 from g_chan.persona.stream_context import StreamContextProvider, TwitchHelixClient
+from g_chan.tts.edge import EdgeTTSEngine
+from g_chan.tts.file_sink import FileAudioSink
 
 log = logging.getLogger("g_chan")
 
@@ -54,10 +56,27 @@ async def amain() -> int:
         log.info("stream_context disabled — skipping Helix polling")
         sctx = _NullStreamCtx()
 
+    # 创建TTS引擎与音频文件接收方(如果启用)
+    tts_engine: EdgeTTSEngine | None = None
+    audio_sink: FileAudioSink | None = None
+    if cfg.tts.enabled:
+        tts_engine = EdgeTTSEngine(
+            voice=cfg.tts.voice,
+            rate=cfg.tts.rate,
+            pitch=cfg.tts.pitch,
+        )
+        audio_sink = FileAudioSink(output_dir=cfg.tts.output_dir)
+        log.info("tts enabled — voice=%s, output_dir=%s",
+                 cfg.tts.voice, cfg.tts.output_dir)
+    else:
+        log.info("tts disabled (config.tts.enabled=false)")
+
     orch = Orchestrator(
         chat=chat, llm=llm, persona=persona, stream_ctx=sctx,
         rate_limit_ms=cfg.rate_limit.global_window_ms,
         busy_reply=cfg.rate_limit.busy_reply,
+        tts=tts_engine,
+        audio_sink=audio_sink,
     )
     orch.wire()
 
