@@ -24,22 +24,24 @@ async def amain() -> int:
 
     log.info("starting G酱 — channel=#%s provider=%s",
              cfg.twitch.channel, cfg.llm.provider)
-
+    # 连接TwitchChat
+    # TODO: 后期需要支持YouTube等其他平台，需重构ChatAdapter接口以适配不同平台的聊天系统
     chat = TwitchChatAdapter(
         channel=cfg.twitch.channel,
         bot_username=cfg.twitch.bot_username,
         oauth_token=cfg.twitch.oauth_token,
         trigger=cfg.twitch.trigger,
     )
-
+    # 创建LLM提供者
     llm = create_provider(cfg.llm)
-
+    # 加载人格设定
     persona = PersonaLoader(
         base_path=cfg.persona.prompt_file,
         output_format_path="prompts/output_format.md",
         include_stream_context=cfg.persona.include_stream_context,
     )
-
+    # 创建获取Twitch直播标题内容以提供上下文（如果启用）
+    # TODO : 目前StreamContextProvider仅支持Twitch，后续需要重构以适配其他平台的直播上下文获取
     sctx: StreamContextProvider | _NullStreamCtx
     polling: asyncio.Task | None = None
     if cfg.persona.include_stream_context:
