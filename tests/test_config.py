@@ -21,9 +21,6 @@ twitch:
   channel: "alice"
   bot_username: "g_bot"
   trigger: "@G酱"
-rate_limit:
-  global_window_ms: 5000
-  busy_reply: "晕"
 llm:
   provider: "gemini"
   model: "gemini-2.5-flash"
@@ -44,7 +41,7 @@ logging:
     assert cfg.twitch.channel == "alice"
     assert cfg.twitch.oauth_token == "oauth:abc"
     assert cfg.llm.api_key == "gkey"
-    assert cfg.rate_limit.global_window_ms == 5000
+    assert cfg.interaction.vip_window_ms == 2000
 
 
 def test_missing_env_var_fails(tmp_path, monkeypatch):
@@ -58,9 +55,6 @@ twitch:
   channel: "alice"
   bot_username: "g_bot"
   trigger: "@G酱"
-rate_limit:
-  global_window_ms: 5000
-  busy_reply: "晕"
 llm:
   provider: "gemini"
   model: "gemini-2.5-flash"
@@ -90,9 +84,6 @@ twitch:
   channel: "alice"
   bot_username: "g_bot"
   trigger: "@G酱"
-rate_limit:
-  global_window_ms: 5000
-  busy_reply: "晕"
 llm:
   provider: "lolwut"
   model: "x"
@@ -122,9 +113,6 @@ twitch:
   channel: "alice"
   bot_username: "g_bot"
   trigger: "@G酱"
-rate_limit:
-  global_window_ms: 5000
-  busy_reply: "晕"
 llm:
   provider: "gemini"
   model: "gemini-2.5-flash"
@@ -172,9 +160,6 @@ twitch:
   channel: "alice"
   bot_username: "g_bot"
   trigger: "@G酱"
-rate_limit:
-  global_window_ms: 5000
-  busy_reply: "晕"
 llm:
   provider: "gemini"
   model: "gemini-2.5-flash"
@@ -196,3 +181,111 @@ logging:
     assert cfg.tts.voices["en"] == "en-US-AvaNeural"
     assert cfg.tts.voices["ja"] == "ja-JP-NanamiNeural"
     assert cfg.tts.output_dir == "out"
+
+
+def test_loads_interaction_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+  include_stream_context: true
+stream_context:
+  poll_interval_ms: 30000
+interaction:
+  vip_window_ms: 2000
+  batch_window_s: 5
+  batch_cooldown_ms: 5000
+  buffer_size: 10
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.interaction.vip_window_ms == 2000
+    assert cfg.interaction.batch_window_s == 5
+    assert cfg.interaction.batch_cooldown_ms == 5000
+    assert cfg.interaction.buffer_size == 10
+
+
+def test_interaction_defaults_when_section_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+  include_stream_context: true
+stream_context:
+  poll_interval_ms: 30000
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    # 默认值
+    assert cfg.interaction.vip_window_ms == 2000
+    assert cfg.interaction.batch_window_s == 5.0
+    assert cfg.interaction.batch_cooldown_ms == 5000
+    assert cfg.interaction.buffer_size == 10
+
+
+def test_interaction_zero_means_unlimited(tmp_path, monkeypatch):
+    """0 = 无限/禁用 — 测能加载这种极端配置。"""
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+  include_stream_context: true
+stream_context:
+  poll_interval_ms: 30000
+interaction:
+  vip_window_ms: 0
+  batch_window_s: 0
+  batch_cooldown_ms: 0
+  buffer_size: 0
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.interaction.vip_window_ms == 0
+    assert cfg.interaction.batch_window_s == 0
+    assert cfg.interaction.batch_cooldown_ms == 0
+    assert cfg.interaction.buffer_size == 0

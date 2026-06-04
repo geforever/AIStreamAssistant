@@ -23,11 +23,6 @@ class TwitchConfig(BaseModel):
     client_secret: str = Field(default="", description="from $TWITCH_CLIENT_SECRET")
 
 
-class RateLimitConfig(BaseModel):
-    global_window_ms: int = 5000
-    busy_reply: str = "G酱我被你们搞的好晕啊XD"
-
-
 class LLMFallbackConfig(BaseModel):
     """LLM 返回不合法 JSON / 空 text / 缺字段时使用的回退四元组。"""
     text: str = "诶?本小姐刚才走神了,你再说一遍嘛"
@@ -55,6 +50,27 @@ class StreamContextConfig(BaseModel):
     poll_interval_ms: int = 30000
 
 
+class InteractionConfig(BaseModel):
+    """交互模式配置 — VIP 即时路径 + 普通观众批处理路径。
+
+    所有时间字段:0 = 不限制 / 禁用对应行为(详见每个字段说明)。
+    """
+    # VIP/Mod/Broadcaster 最短间隔(毫秒)。0 = 完全无限流。
+    vip_window_ms: int = 2000
+
+    # 批处理累积窗口(秒)。0 = 禁用 batch 路径,普通观众完全不响应。
+    # 第一条普通 @ 触发开始计时,到 batch_window_s 时 flush。
+    batch_window_s: float = 5.0
+
+    # 两次 batch flush 最小间隔(毫秒,从 flush 开始算)。0 = 无间隔。
+    # cooldown 期间到达的普通 @ 全部 silent drop。
+    batch_cooldown_ms: int = 5000
+
+    # buffer 最大容量(per-user dedup 后)。0 = 不限(危险,不推荐)。
+    # 超过时 LRU evict 最老的 user。LLM prompt 也用此值作为最大条目数。
+    buffer_size: int = 10
+
+
 def _default_voices() -> dict[Language, str]:
     return {
         "zh": "zh-CN-XiaoyiNeural",
@@ -79,11 +95,11 @@ class LoggingConfig(BaseModel):
 
 class AppConfig(BaseModel):
     twitch: TwitchConfig
-    rate_limit: RateLimitConfig
     llm: LLMConfig
     persona: PersonaConfig
     stream_context: StreamContextConfig
     tts: TTSConfig = Field(default_factory=TTSConfig)
+    interaction: InteractionConfig = Field(default_factory=InteractionConfig)
     logging: LoggingConfig
 
 

@@ -10,6 +10,25 @@ from g_chan.chat.base import ChatAdapter, ChatHandler, ChatMessage
 log = logging.getLogger(__name__)
 
 
+def _is_priority(author: object) -> bool:
+    """检测发言者是否走即时路径 — mod / broadcaster / vip。"""
+    if author is None:
+        return False
+    # twitchio v2 Chatter 暴露这些 bool
+    if getattr(author, "is_mod", False):
+        return True
+    if getattr(author, "is_broadcaster", False):
+        return True
+    # 部分 twitchio 版本暴露 is_vip
+    if getattr(author, "is_vip", False):
+        return True
+    # 兜底:badges 字典
+    badges = getattr(author, "badges", None) or {}
+    if isinstance(badges, dict) and "vip" in badges:
+        return True
+    return False
+
+
 class TwitchChatAdapter(ChatAdapter):
     def __init__(
         self,
@@ -50,6 +69,7 @@ class TwitchChatAdapter(ChatAdapter):
                 user=message.author.name if message.author else "unknown",
                 body=stripped,
                 raw=body,
+                is_priority=_is_priority(message.author),
             )
             try:
                 await self._handler(msg)

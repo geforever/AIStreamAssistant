@@ -4,10 +4,13 @@ twitch:
   bot_username: "g_chan_bot"
   trigger: "@G酱"
 
-# bot繁忙设置
-rate_limit:
-  global_window_ms: 5000
-  busy_reply: "G酱我被你们搞的好晕啊XD"
+# 交互模式 — 双路径
+# VIP/Mod/Broadcaster 走即时路径,普通观众走批处理。所有时间字段 0 = 不限/禁用。
+interaction:
+  vip_window_ms: 2000      # VIP/Mod 最短间隔(ms),0 = 无限流
+  batch_window_s: 5        # 普通观众消息累积窗口(秒)。0 = 完全不响应普通观众
+  batch_cooldown_ms: 5000  # 两次 batch flush 最小间隔(ms,从 flush 开始算)。0 = 背靠背
+  buffer_size: 10          # buffer 最大容量(per-user dedup 后)。0 = 不限
 
 llm:
   # gemini | claude | openai | qwen (Phase 1 仅 gemini)

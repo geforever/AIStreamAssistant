@@ -39,9 +39,11 @@ class FakeChat(ChatAdapter):
     async def send(self, text: str) -> None:
         self.sent.append(text)
 
-    async def emit(self, user: str, body: str) -> None:
+    async def emit(self, user: str, body: str, *, is_priority: bool = False) -> None:
         assert self.handler is not None
-        await self.handler(ChatMessage(user=user, body=body, raw=f"@G酱 {body}"))
+        await self.handler(ChatMessage(
+            user=user, body=body, raw=f"@G酱 {body}", is_priority=is_priority,
+        ))
 
 
 def make_reply(

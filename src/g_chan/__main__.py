@@ -24,8 +24,17 @@ async def amain() -> int:
     cfg = load_config(cfg_path)
     setup_logging(level=cfg.logging.level, file=cfg.logging.file)
 
-    log.info("starting G酱 — channel=#%s provider=%s",
-             cfg.twitch.channel, cfg.llm.provider)
+    log.info(
+        (
+            "starting G酱 — channel=#%s provider=%s "
+            "vip_window=%dms batch=%.1fs cooldown=%dms buffer=%d"
+        ),
+        cfg.twitch.channel, cfg.llm.provider,
+        cfg.interaction.vip_window_ms,
+        cfg.interaction.batch_window_s,
+        cfg.interaction.batch_cooldown_ms,
+        cfg.interaction.buffer_size,
+    )
     # 连接TwitchChat
     # TODO: 后期需要支持YouTube等其他平台，需重构ChatAdapter接口以适配不同平台的聊天系统
     chat = TwitchChatAdapter(
@@ -39,7 +48,6 @@ async def amain() -> int:
     # 加载人格设定
     persona = PersonaLoader(
         base_path=cfg.persona.prompt_file,
-        output_format_path="prompts/output_format.md",
         include_stream_context=cfg.persona.include_stream_context,
     )
     # 创建获取Twitch直播标题内容以提供上下文（如果启用）
@@ -73,8 +81,10 @@ async def amain() -> int:
 
     orch = Orchestrator(
         chat=chat, llm=llm, persona=persona, stream_ctx=sctx,
-        rate_limit_ms=cfg.rate_limit.global_window_ms,
-        busy_reply=cfg.rate_limit.busy_reply,
+        vip_window_ms=cfg.interaction.vip_window_ms,
+        batch_window_s=cfg.interaction.batch_window_s,
+        batch_cooldown_ms=cfg.interaction.batch_cooldown_ms,
+        buffer_size=cfg.interaction.buffer_size,
         fallback_text=cfg.llm.fallback.text,
         fallback_kaomoji=cfg.llm.fallback.kaomoji,
         fallback_mood=cfg.llm.fallback.mood,

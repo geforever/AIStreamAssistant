@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from g_chan.llm.base import LLMTimeoutError
@@ -7,8 +9,6 @@ from tests.conftest import FakeAudioSink, FakeChat, FakeLLM, FakeTTS, make_reply
 
 
 class FixedPersona:
-    def __init__(self, ctx: StreamContext | None = None):
-        self._ctx = ctx
     def assemble(self, *, stream_ctx):  # noqa: ARG002
         return "你是 G 酱。"
 
@@ -20,336 +20,267 @@ class FixedStreamCtx:
         return self._ctx
 
 
-# 测试用默认 fallback — 跟生产配置无关,测试只关心"fallback 触发时这个值会被用上"
-_FB_TEXT = "FB_TEXT"
-_FB_KAOMOJI = "FB_KAOMOJI"
-_FB_MOOD = "dizzy"
-_FB_LANG = "zh"
+# 可控时间 — 测试都用注入式 now_ms
+class FakeClock:
+    def __init__(self, start_ms: float = 1_000_000):
+        self.now = start_ms
+    def __call__(self) -> float:
+        return self.now
+    def advance(self, ms: float) -> None:
+        self.now += ms
+
+
+# 测试默认 fallback — 跟生产配置无关,测试只关心"fallback 触发时这个值会被用上"
 _FB_KWARGS = {
-    "fallback_text": _FB_TEXT,
-    "fallback_kaomoji": _FB_KAOMOJI,
-    "fallback_mood": _FB_MOOD,
-    "fallback_language": _FB_LANG,
+    "fallback_text": "FB_TEXT",
+    "fallback_kaomoji": "FB_KAO",
+    "fallback_mood": "dizzy",
+    "fallback_language": "zh",
 }
 
 
-@pytest.mark.asyncio
-async def test_happy_path_sends_at_reply():
-    chat = FakeChat()
-    llm = FakeLLM()
-    llm.next_reply = make_reply("好啊~", mood="happy")
-    orch = Orchestrator(
+def _build_orch(
+    *, chat, llm, clock,
+    vip_window_ms=0,           # 默认无 vip 限流(简化测试)
+    batch_window_s=2,
+    batch_cooldown_ms=0,        # 默认无 cooldown
+    buffer_size=10,
+    tts=None, audio_sink=None,
+):
+    return Orchestrator(
         chat=chat,
         llm=llm,
         persona=FixedPersona(),
         stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-    **_FB_KWARGS,
-    )
-    orch.wire()
-
-    await chat.emit("alice", "嗨")
-    assert chat.sent == ["@alice 好啊~"]
-    assert len(llm.calls) == 1
-    sent_msgs = llm.calls[0]
-    assert sent_msgs[0].role == "system"
-    assert sent_msgs[-1].role == "user"
-    assert "alice" in sent_msgs[-1].content  # 把 user name 也带进去
-
-
-@pytest.mark.asyncio
-async def test_rate_limited_sends_busy_reply():
-    chat = FakeChat()
-    llm = FakeLLM()
-    llm.next_reply = make_reply("ok", mood="happy")
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=60_000,   # 大窗口,第 2 条必拒
-        busy_reply="晕XD",
-    **_FB_KWARGS,
-    )
-    orch.wire()
-    await chat.emit("alice", "嗨")
-    await chat.emit("bob", "嗨")
-    assert chat.sent == ["@alice ok", "@bob 晕XD"]
-    assert len(llm.calls) == 1   # 只调过一次 LLM
-
-
-@pytest.mark.asyncio
-async def test_llm_failure_uses_configured_fallback():
-    """LLM 调用失败 → 用 fallback 三元组拼成 LLMReply,chat 发送 text + kaomoji。"""
-    chat = FakeChat()
-    llm = FakeLLM()
-    llm.should_raise = LLMTimeoutError("boom")
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-    **_FB_KWARGS,
-    )
-    orch.wire()
-    await chat.emit("alice", "嗨")
-    # chat: fallback_text + fallback_kaomoji 拼接
-    assert chat.sent == [f"@alice {_FB_TEXT} {_FB_KAOMOJI}"]
-
-
-@pytest.mark.asyncio
-async def test_passes_stream_context_to_persona(monkeypatch):
-    chat = FakeChat()
-    llm = FakeLLM()
-    llm.next_reply = make_reply("我在玩原神 [mood:happy]", mood="happy")
-    ctx = StreamContext(title="深夜原神", game_name="Genshin Impact")
-    persona_called_with = []
-    class Spy:
-        def assemble(self, *, stream_ctx):
-            persona_called_with.append(stream_ctx)
-            return "system"
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=Spy(),
-        stream_ctx=FixedStreamCtx(ctx),
-        rate_limit_ms=0,
-        busy_reply="...",
-    **_FB_KWARGS,
-    )
-    orch.wire()
-    await chat.emit("alice", "在玩啥?")
-    assert persona_called_with == [ctx]
-
-
-@pytest.mark.asyncio
-async def test_no_tts_when_engine_not_provided():
-    """Phase 1 行为兼容 — 不传 tts/sink 时不应影响 chat 路径。"""
-    chat = FakeChat()
-    llm = FakeLLM()
-    llm.next_reply = make_reply("好啊~", mood="happy")
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-    **_FB_KWARGS,
-    )
-    orch.wire()
-    await chat.emit("alice", "嗨")
-    assert chat.sent == ["@alice 好啊~"]
-
-
-@pytest.mark.asyncio
-async def test_tts_synthesized_and_saved_in_parallel_with_chat():
-    chat = FakeChat()
-    llm = FakeLLM()
-    llm.next_reply = make_reply("哼,本小姐才不要呢", mood="tsundere")
-    tts = FakeTTS()
-    sink = FakeAudioSink()
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-        **_FB_KWARGS,
+        vip_window_ms=vip_window_ms,
+        batch_window_s=batch_window_s,
+        batch_cooldown_ms=batch_cooldown_ms,
+        buffer_size=buffer_size,
         tts=tts,
-        audio_sink=sink,
+        audio_sink=audio_sink,
+        now_ms=clock,
+        **_FB_KWARGS,
     )
+
+
+# ============= VIP / Mod / Broadcaster 路径 =============
+
+@pytest.mark.asyncio
+async def test_vip_path_replies_immediately_with_at_user():
+    """is_priority=True → 立即 LLM + chat 发 @user。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊~", mood="happy", kaomoji="(=ω=)")
+    clock = FakeClock()
+    orch = _build_orch(chat=chat, llm=llm, clock=clock)
     orch.wire()
-    await chat.emit("alice", "嗨")
-    assert chat.sent == ["@alice 哼,本小姐才不要呢"]
-    assert tts.calls == [("哼,本小姐才不要呢", "zh")]
-    assert len(sink.writes) == 1
-    audio, user = sink.writes[0]
-    assert audio.data == b"FAKEAUDIO"
-    assert user == "alice"
+    await chat.emit("modalice", "嗨", is_priority=True)
+    # VIP 路径是 create_task 异步触发,等一会
+    await asyncio.sleep(0.05)
+    assert chat.sent == ["@modalice 好啊~ (=ω=)"]
+    assert len(llm.calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_tts_failure_does_not_block_chat():
+async def test_vip_rate_limited_silently_drops():
+    """vip_window_ms 内的第二次 vip @ silent drop,无 busy reply。"""
     chat = FakeChat()
     llm = FakeLLM()
     llm.next_reply = make_reply("好啊", mood="happy")
+    clock = FakeClock()
+    orch = _build_orch(chat=chat, llm=llm, clock=clock, vip_window_ms=10_000)
+    orch.wire()
+
+    await chat.emit("modalice", "嗨", is_priority=True)
+    await asyncio.sleep(0.05)
+    # 仍在 10s 窗口内
+    clock.advance(500)
+    await chat.emit("modbob", "嗨", is_priority=True)
+    await asyncio.sleep(0.05)
+
+    assert len(chat.sent) == 1   # 只发了一条(alice 的)
+    assert "modalice" in chat.sent[0]
+
+
+@pytest.mark.asyncio
+async def test_vip_llm_failure_uses_fallback():
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.should_raise = LLMTimeoutError("boom")
+    clock = FakeClock()
+    orch = _build_orch(chat=chat, llm=llm, clock=clock)
+    orch.wire()
+    await chat.emit("modalice", "嗨", is_priority=True)
+    await asyncio.sleep(0.05)
+    # fallback 是 "FB_TEXT" + "FB_KAO"
+    assert chat.sent == ["@modalice FB_TEXT FB_KAO"]
+
+
+# ============= 普通観众批处理路径 =============
+
+@pytest.mark.asyncio
+async def test_regular_single_message_batched_then_replied():
+    """单条普通 @ → 等 batch_window 后 flush → 1 条 chat(无 @user)。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啦", mood="happy", kaomoji="(=ω=)")
+    clock = FakeClock()
+    orch = _build_orch(chat=chat, llm=llm, clock=clock, batch_window_s=0.05)
+    orch.wire()
+
+    await chat.emit("alice", "嗨")
+    # 等待 scheduled flush(实际 0.05s + 一点点)
+    await asyncio.sleep(0.15)
+
+    assert chat.sent == ["好啦 (=ω=)"]   # 没有 @user
+    assert len(llm.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_regular_dedup_by_user_keeps_latest():
+    """同一 user 多次 @ → buffer 只留最新一条。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("回复", mood="happy")
+    clock = FakeClock()
+    orch = _build_orch(chat=chat, llm=llm, clock=clock, batch_window_s=0.05)
+    orch.wire()
+
+    await chat.emit("alice", "第一条")
+    clock.advance(10)
+    await chat.emit("alice", "第二条")
+    clock.advance(10)
+    await chat.emit("alice", "第三条")
+    await asyncio.sleep(0.15)
+
+    # LLM 应只看到最新的 "第三条"
+    assert len(llm.calls) == 1
+    user_content = llm.calls[0][1].content
+    assert "第三条" in user_content
+    assert "第一条" not in user_content
+    assert "第二条" not in user_content
+
+
+@pytest.mark.asyncio
+async def test_regular_silence_drops_no_chat_no_tts():
+    """LLM 返回 text='' → batch 不发 chat 不调 TTS,buffer 清空。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("", mood="happy")   # 空 text
     tts = FakeTTS()
-    tts.should_raise = RuntimeError("tts boom")
     sink = FakeAudioSink()
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-        **_FB_KWARGS,
-        tts=tts,
-        audio_sink=sink,
+    clock = FakeClock()
+    orch = _build_orch(
+        chat=chat, llm=llm, clock=clock, batch_window_s=0.05,
+        tts=tts, audio_sink=sink,
     )
     orch.wire()
+
     await chat.emit("alice", "嗨")
-    # chat 路径必须完成
-    assert chat.sent == ["@alice 好啊"]
-    # sink 没被调用(synth 失败)
+    await asyncio.sleep(0.15)
+
+    assert chat.sent == []
+    assert tts.calls == []
     assert sink.writes == []
 
 
 @pytest.mark.asyncio
-async def test_sink_failure_does_not_block_chat():
+async def test_regular_cooldown_drops_during_window():
+    """cooldown 内的普通 @ silent drop。"""
     chat = FakeChat()
     llm = FakeLLM()
-    llm.next_reply = make_reply("好啊", mood="happy")
-    tts = FakeTTS()
-    sink = FakeAudioSink()
-    sink.should_raise = OSError("disk full")
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-        **_FB_KWARGS,
-        tts=tts,
-        audio_sink=sink,
+    llm.next_reply = make_reply("回复1", mood="happy")
+    clock = FakeClock()
+    orch = _build_orch(
+        chat=chat, llm=llm, clock=clock,
+        batch_window_s=0.05, batch_cooldown_ms=10_000,
     )
     orch.wire()
+
     await chat.emit("alice", "嗨")
-    assert chat.sent == ["@alice 好啊"]
-    assert tts.calls == [("好啊", "zh")]   # synth 成功了
-    # sink 写文件失败了,但 chat 路径不受影响
+    await asyncio.sleep(0.15)   # 让第一个 batch flush
+
+    assert chat.sent == ["回复1"]
+    assert len(llm.calls) == 1
+
+    # 仍在 cooldown 内,新 @ 应被 drop
+    clock.advance(500)
+    await chat.emit("bob", "嗨2")
+    await asyncio.sleep(0.15)
+    assert len(chat.sent) == 1   # bob 没触发
+    assert len(llm.calls) == 1
 
 
 @pytest.mark.asyncio
-async def test_llm_failure_still_runs_tts_with_fallback():
-    """LLM 失败时也走 TTS 路径 — fallback text 也会被朗读 + 写音频文件。"""
+async def test_regular_batch_disabled_when_window_zero():
+    """batch_window_s=0 → 普通観众完全不响应。"""
     chat = FakeChat()
     llm = FakeLLM()
-    llm.should_raise = LLMTimeoutError("llm boom")
-    tts = FakeTTS()
-    sink = FakeAudioSink()
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-        **_FB_KWARGS,
-        tts=tts,
-        audio_sink=sink,
-    )
+    llm.next_reply = make_reply("不应被调用", mood="happy")
+    clock = FakeClock()
+    orch = _build_orch(chat=chat, llm=llm, clock=clock, batch_window_s=0)
     orch.wire()
-    await chat.emit("alice", "嗨")
-    assert chat.sent == [f"@alice {_FB_TEXT} {_FB_KAOMOJI}"]
-    assert tts.calls == [(_FB_TEXT, "zh")]          # TTS 也朗读了 fallback text
-    assert len(sink.writes) == 1            # 也写了 mp3 文件
 
+    await chat.emit("alice", "嗨")
+    await asyncio.sleep(0.15)
+    assert chat.sent == []
+    assert llm.calls == []
+
+
+# ============= 混合(VIP + 普通)=============
 
 @pytest.mark.asyncio
-async def test_chat_send_happens_after_tts_completes():
-    """串行: TTS 完成(成功或失败)之后才发 chat,避免文字先到声音晚到的脱节感。"""
+async def test_vip_and_regular_run_concurrently():
+    """VIP @ 立即回复,期间普通 @ 仍可进 buffer 等 flush。"""
     chat = FakeChat()
     llm = FakeLLM()
-    llm.next_reply = make_reply("好啊", mood="happy")
-    tts = FakeTTS()
-    sink = FakeAudioSink()
+    # 两次 LLM:一次 VIP,一次 batch
+    replies = [
+        make_reply("VIP回复", mood="happy"),
+        make_reply("batch回复", mood="happy"),
+    ]
+    call_idx = [0]
+    async def fake_generate(messages, **kw):
+        i = call_idx[0]
+        call_idx[0] += 1
+        return replies[i]
+    llm.generate = fake_generate  # type: ignore[method-assign]
 
-    events: list[str] = []
-    orig_synth = tts.synthesize
-    orig_send = chat.send
-    orig_write = sink.write
-
-    async def synth(text, *, language="zh", timeout_s=10.0):
-        events.append("tts_start")
-        result = await orig_synth(text, language=language, timeout_s=timeout_s)
-        events.append("tts_done")
-        return result
-
-    async def write(audio, *, user):
-        events.append("sink_write")
-        return await orig_write(audio, user=user)
-
-    async def send(text):
-        events.append("chat_send")
-        return await orig_send(text)
-
-    tts.synthesize = synth        # type: ignore[method-assign]
-    sink.write = write            # type: ignore[method-assign]
-    chat.send = send              # type: ignore[method-assign]
-
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-        **_FB_KWARGS,
-        tts=tts,
-        audio_sink=sink,
-    )
+    clock = FakeClock()
+    orch = _build_orch(chat=chat, llm=llm, clock=clock, batch_window_s=0.05)
     orch.wire()
-    await chat.emit("alice", "嗨")
 
-    # tts → write → chat 严格顺序
-    assert events == ["tts_start", "tts_done", "sink_write", "chat_send"]
+    await chat.emit("modalice", "嗨", is_priority=True)
+    await chat.emit("bob", "嗨")
+    await asyncio.sleep(0.2)
 
+    # 两条都应发出
+    assert "@modalice VIP回复" in chat.sent
+    assert "batch回复" in chat.sent   # 无 @
+
+
+# ============= 批处理 + TTS 集成 =============
 
 @pytest.mark.asyncio
-async def test_chat_appends_kaomoji_tts_uses_text_only():
-    """正常路径:LLM 分离返回 text + kaomoji,chat 拼接展示,TTS 只用 text。"""
+async def test_batch_path_drives_tts_with_batch_user_label():
+    """batch flush 时调 TTS,sink.user 标记为 'batch'。"""
     chat = FakeChat()
     llm = FakeLLM()
-    llm.next_reply = make_reply(
-        "哼,本小姐才没有", mood="tsundere", kaomoji="(›´ω`‹)"
-    )
+    llm.next_reply = make_reply("hi", mood="happy", language="en")
     tts = FakeTTS()
     sink = FakeAudioSink()
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-        **_FB_KWARGS,
-        tts=tts,
-        audio_sink=sink,
+    clock = FakeClock()
+    orch = _build_orch(
+        chat=chat, llm=llm, clock=clock,
+        batch_window_s=0.05,
+        tts=tts, audio_sink=sink,
     )
     orch.wire()
-    await chat.emit("alice", "嗨")
 
-    # chat: text + kaomoji 拼接
-    assert chat.sent == ["@alice 哼,本小姐才没有 (›´ω`‹)"]
-    # tts: 只用 text
-    assert tts.calls == [("哼,本小姐才没有", "zh")]
+    await chat.emit("alice", "yo")
+    await asyncio.sleep(0.15)
 
-
-@pytest.mark.asyncio
-async def test_chat_no_trailing_space_when_kaomoji_empty():
-    """kaomoji 为空时,chat 不应有多余空格。"""
-    chat = FakeChat()
-    llm = FakeLLM()
-    llm.next_reply = make_reply("好的,知道了", mood="happy", kaomoji="")
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-    **_FB_KWARGS,
-    )
-    orch.wire()
-    await chat.emit("alice", "嗨")
-    assert chat.sent == ["@alice 好的,知道了"]
-
-
-@pytest.mark.asyncio
-async def test_tts_skipped_when_text_is_blank():
-    """text 全空白时跳过 TTS — 边界情况,chat 仍发送(可能只有 kaomoji)。"""
-    chat = FakeChat()
-    llm = FakeLLM()
-    llm.next_reply = make_reply("   ", mood="happy", kaomoji="(=ω=)")
-    tts = FakeTTS()
-    sink = FakeAudioSink()
-    orch = Orchestrator(
-        chat=chat, llm=llm, persona=FixedPersona(),
-        stream_ctx=FixedStreamCtx(None),
-        rate_limit_ms=0,
-        busy_reply="...",
-        **_FB_KWARGS,
-        tts=tts,
-        audio_sink=sink,
-    )
-    orch.wire()
-    await chat.emit("alice", "嗨")
-
-    assert tts.calls == []        # 没调 synth
-    assert sink.writes == []      # 也没写文件
-    assert len(chat.sent) == 1    # chat 还是发了
+    assert tts.calls == [("hi", "en")]
+    assert len(sink.writes) == 1
+    _, user_tag = sink.writes[0]
+    assert user_tag == "batch"

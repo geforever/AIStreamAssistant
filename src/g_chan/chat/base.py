@@ -11,6 +11,7 @@ class ChatMessage:
     user: str           # 发送者用户名
     body: str           # 消息正文(已去除 trigger 前缀)
     raw: str            # 原始整行(含 trigger,用于日志)
+    is_priority: bool = False   # True = mod / broadcaster / vip,走即时路径
 
 
 # 收到 @G酱 触发消息后的回调
