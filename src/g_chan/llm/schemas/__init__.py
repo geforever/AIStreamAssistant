@@ -1,8 +1,4 @@
-"""JSON schemas for LLM provider structured-output features.
+"""LLM schema 包入口。"""
+from g_chan.llm.schemas.chat_reply import build_chat_reply_schema
 
-Each schema lives in its own module so it can be imported individually.
-Re-exported here for convenience.
-"""
-from g_chan.llm.schemas.chat_reply import CHAT_REPLY_SCHEMA
-
-__all__ = ["CHAT_REPLY_SCHEMA"]
+__all__ = ["build_chat_reply_schema"]

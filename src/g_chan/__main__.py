@@ -8,21 +8,58 @@ from pathlib import Path
 
 from g_chan.chat.twitch import TwitchChatAdapter
 from g_chan.config import load_config
+from g_chan.live2d.model_loader import (
+    Live2DModel,
+    discover_model_path,
+    load_model_info,
+)
 from g_chan.llm.factory import create_provider
 from g_chan.logging_setup import setup_logging
 from g_chan.orchestrator import Orchestrator
 from g_chan.persona.loader import PersonaLoader
 from g_chan.persona.stream_context import StreamContextProvider, TwitchHelixClient
+from g_chan.prompts import render_output_rules
 from g_chan.tts.edge import EdgeTTSEngine
 from g_chan.tts.file_sink import FileAudioSink
 
 log = logging.getLogger("g_chan")
 
 
+def _load_live2d_model(model_path_str: str) -> Live2DModel:
+    """根据 config.live2d.model_path 加载模型。空字符串 → auto-detect。"""
+    if model_path_str:
+        path = Path(model_path_str)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"live2d.model_path does not exist: {path}"
+            )
+    else:
+        path = discover_model_path(Path("Live2D"))
+        if path is None:
+            raise FileNotFoundError(
+                "live2d.enabled=true but no model found. "
+                "Either put a .model3.json under Live2D/<folder>/ "
+                "or set live2d.model_path explicitly."
+            )
+    log.info("loading Live2D model: %s", path)
+    return load_model_info(path)
+
+
 async def amain() -> int:
     cfg_path = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("config.yaml")
     cfg = load_config(cfg_path)
     setup_logging(level=cfg.logging.level, file=cfg.logging.file)
+
+    # Live2D 模型(可选)
+    live2d_model: Live2DModel | None = None
+    if cfg.live2d.enabled:
+        live2d_model = _load_live2d_model(cfg.live2d.model_path)
+        log.info(
+            "live2d enabled — expressions=%d motions=%d",
+            len(live2d_model.expressions), len(live2d_model.motions),
+        )
+    else:
+        log.info("live2d disabled — pure chat mode")
 
     log.info(
         (
@@ -35,6 +72,7 @@ async def amain() -> int:
         cfg.interaction.batch_cooldown_ms,
         cfg.interaction.buffer_size,
     )
+
     # 连接TwitchChat
     # TODO: 后期需要支持YouTube等其他平台，需重构ChatAdapter接口以适配不同平台的聊天系统
     chat = TwitchChatAdapter(
@@ -43,13 +81,24 @@ async def amain() -> int:
         oauth_token=cfg.twitch.oauth_token,
         trigger=cfg.twitch.trigger,
     )
-    # 创建LLM提供者
-    llm = create_provider(cfg.llm)
+
+    # 注入 Live2DModel 到 factory(可能为 None)
+    llm = create_provider(cfg.llm, live2d_cfg=cfg.live2d, live2d_model=live2d_model)
+
+    # 预 render output rules 文本,然后注入 PersonaLoader
+    # 模型未加载时 expressions/motions 为空 → LLM 只能选 "None"(归一化为 "")
+    output_rules_text = render_output_rules(
+        expressions=live2d_model.expressions if live2d_model else [],
+        motions=live2d_model.motions if live2d_model else [],
+    )
+
     # 加载人格设定
     persona = PersonaLoader(
         base_path=cfg.persona.prompt_file,
+        output_rules_text=output_rules_text,
         include_stream_context=cfg.stream_context.enabled,
     )
+
     # 创建获取Twitch直播标题内容以提供上下文（如果启用）
     # TODO : 目前StreamContextProvider仅支持Twitch，后续需要重构以适配其他平台的直播上下文获取
     sctx: StreamContextProvider | _NullStreamCtx
@@ -89,6 +138,10 @@ async def amain() -> int:
         fallback_kaomoji=cfg.llm.fallback.kaomoji,
         fallback_mood=cfg.llm.fallback.mood,
         fallback_language=cfg.llm.fallback.language,
+        default_expression=cfg.live2d.default_expression,
+        default_motion=cfg.live2d.default_motion,
+        expression_change_frequency=cfg.live2d.expression_change_frequency,
+        motion_change_frequency=cfg.live2d.motion_change_frequency,
         tts=tts_engine,
         audio_sink=audio_sink,
     )
@@ -103,7 +156,6 @@ async def amain() -> int:
         await chat.connect()
         log.info("ready — listening for %s in #%s",
                  cfg.twitch.trigger, cfg.twitch.channel)
-        # twitchio.Client.connect() 已是阻塞;此处等其结束
     except KeyboardInterrupt:
         log.info("shutting down")
     finally:

@@ -7,7 +7,7 @@ from typing import Literal
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from g_chan.llm.base import Language, Mood
 
@@ -73,6 +73,40 @@ class InteractionConfig(BaseModel):
     buffer_size: int = 10
 
 
+class Live2DConfig(BaseModel):
+    """Live2D 表情/动作驱动配置。
+
+    enabled=False 时:
+    - 不加载 Live2D 模型
+    - LLM 输出 schema 不含 expression/motion 字段
+    - 程序退化为纯 chat bot
+    """
+    # 启用 Live2D 表情/动作输出
+    enabled: bool = True
+
+    # 模型路径。空字符串 = 启动时扫描 Live2D/ 下第一个子文件夹,
+    # 递归找第一个 *.model3.json
+    model_path: str = ""
+
+    # LLM 频率裁剪 fail 时 / LLM 调用失败时使用的表情和动作名
+    # 空字符串 = 不传任何 expression / motion 给 viewer(保持当前状态)
+    default_expression: str = ""
+    default_motion: str = ""
+
+    # 采纳 LLM 选择的概率 [0.0, 1.0]
+    # 1.0 = 100% 用 LLM 选的(每次回复都可能变)
+    # 0.0 = 永远不变,一直用 default_*
+    # 0.3 = 30% 概率用 LLM 选的,70% 用 default
+    expression_change_frequency: float = Field(default=1.0, ge=0.0, le=1.0)
+    motion_change_frequency: float = Field(default=0.3, ge=0.0, le=1.0)
+
+    @field_validator("default_expression", "default_motion", mode="before")
+    @classmethod
+    def _to_lower(cls, v: object) -> object:
+        """项目约定 expression / motion 名一律小写,自动归一化用户输入。"""
+        return v.lower() if isinstance(v, str) else v
+
+
 def _default_voices() -> dict[Language, str]:
     return {
         "zh": "zh-CN-XiaoyiNeural",
@@ -102,6 +136,7 @@ class AppConfig(BaseModel):
     stream_context: StreamContextConfig
     tts: TTSConfig = Field(default_factory=TTSConfig)
     interaction: InteractionConfig = Field(default_factory=InteractionConfig)
+    live2d: Live2DConfig = Field(default_factory=Live2DConfig)
     logging: LoggingConfig
 
 

@@ -1,10 +1,11 @@
-"""Persona 拼装:用户人设(可编辑) + 直播上下文 + 程序输出契约。"""
+"""Persona 拼装:用户人设 + 直播上下文 + 程序输出契约。
+
+输出契约文本由调用方(__main__ 装配时)预先 render 好后注入。
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-
-from g_chan.prompts import OUTPUT_RULES
 
 
 @dataclass
@@ -18,9 +19,11 @@ class PersonaLoader:
         self,
         *,
         base_path: str | Path,
+        output_rules_text: str,
         include_stream_context: bool = True,
     ):
         self._base_path = Path(base_path)
+        self._output_rules_text = output_rules_text
         self._include_stream_context = include_stream_context
 
     def assemble(self, *, stream_ctx: StreamContext | None) -> str:
@@ -34,6 +37,5 @@ class PersonaLoader:
                 "[/当前直播上下文]\n"
                 "如果观众问到你在玩什么/做什么,基于上述上下文回答。"
             )
-        # 程序契约(代码注入,用户改不到)
-        sections.append(OUTPUT_RULES)
+        sections.append(self._output_rules_text)
         return "\n\n".join(sections)

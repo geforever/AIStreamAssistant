@@ -30,26 +30,47 @@ def parse_llm_json(
     fallback_kaomoji: str,
     fallback_mood: Mood,
     fallback_language: Language,
-) -> tuple[str, str, Mood, Language]:
-    """解析 LLM 的 JSON 输出 → (text, kaomoji, mood, language)。
+    fallback_expression: str = "",
+    fallback_motion: str = "",
+    available_expressions: list[str] | None = None,
+    available_motions: list[str] | None = None,
+) -> tuple[str, str, Mood, Language, str, str]:
+    """解析 LLM JSON → (text, kaomoji, mood, language, expression, motion)。
 
-    任何解析失败(无效 JSON、非对象、空 text)→ 返回 fallback 四元组。
-    未知 mood/language 字符串 → 用 fallback。
+    expression / motion 行为:
+    - available_* 是 None 或空 list → Live2D disabled,返回 ""(忽略 JSON 里的值)
+    - LLM 输出 "None" 字符串 → 规范化为 ""
+    - LLM 输出 "" 或不在 available 里 → 回退到 fallback_*
     """
+    available_expressions = available_expressions or []
+    available_motions = available_motions or []
+
     try:
         data = json.loads(raw)
     except (json.JSONDecodeError, TypeError) as e:
         log.warning("LLM JSON parse failed: %s, raw=%r", e, raw)
-        return fallback_text, fallback_kaomoji, fallback_mood, fallback_language
+        return (
+            fallback_text, fallback_kaomoji, fallback_mood, fallback_language,
+            _normalize_or_fallback(None, available_expressions, fallback_expression),
+            _normalize_or_fallback(None, available_motions, fallback_motion),
+        )
 
     if not isinstance(data, dict):
         log.warning("LLM JSON is not an object: %r", raw)
-        return fallback_text, fallback_kaomoji, fallback_mood, fallback_language
+        return (
+            fallback_text, fallback_kaomoji, fallback_mood, fallback_language,
+            _normalize_or_fallback(None, available_expressions, fallback_expression),
+            _normalize_or_fallback(None, available_motions, fallback_motion),
+        )
 
     text = str(data.get("text", "")).strip()
     if not text:
         log.warning("LLM JSON has empty/missing text field: %r", raw)
-        return fallback_text, fallback_kaomoji, fallback_mood, fallback_language
+        return (
+            fallback_text, fallback_kaomoji, fallback_mood, fallback_language,
+            _normalize_or_fallback(None, available_expressions, fallback_expression),
+            _normalize_or_fallback(None, available_motions, fallback_motion),
+        )
 
     kaomoji = str(data.get("kaomoji", "")).strip()
 
@@ -67,7 +88,47 @@ def parse_llm_json(
         log.warning("LLM returned unknown language: %r", lang_raw)
         language = fallback_language
 
-    return text, kaomoji, mood, language
+    # expression / motion:Live2D 禁用时返回 ""
+    expression = _normalize_or_fallback(
+        data.get("expression"), available_expressions, fallback_expression,
+    )
+    motion = _normalize_or_fallback(
+        data.get("motion"), available_motions, fallback_motion,
+    )
+
+    return text, kaomoji, mood, language, expression, motion
+
+
+def _normalize_or_fallback(raw, available, fallback) -> str:
+    """规范化 LLM 输出的 expression/motion 值(项目约定:全小写)。
+
+    available 假定已经全部小写(model_loader 入库时已规范化)。
+    LLM 输出和 fallback 入参做防御性 lower() 后比对。
+
+    - available 为空(Live2D 没模型) → 总返回 ""
+    - raw 是 None / "" / "none"(任意大小写)→ 规范化为 ""
+    - raw 在 available 里 → 返回小写化的 raw
+    - raw 不在 → 用 fallback(也要在 available 里,不然 "")
+    """
+    if not available:
+        return ""
+
+    raw_lower = raw.lower() if isinstance(raw, str) else ""
+    if raw_lower in ("", "none"):
+        normalized = ""
+    elif raw_lower in available:
+        return raw_lower
+    else:
+        normalized = ""
+
+    if normalized == "" and fallback:
+        fb_lower = fallback.lower() if isinstance(fallback, str) else ""
+        if fb_lower in ("", "none"):
+            return ""
+        if fb_lower in available:
+            return fb_lower
+        return ""
+    return normalized
 
 
 @dataclass
@@ -86,6 +147,9 @@ class LLMReply:
     latency_ms: int
     tokens_in: int
     tokens_out: int
+    # Phase 2.6 新增 — Live2D 物理表情和动作("" = 无变化 / Live2D disabled)
+    expression: str = ""
+    motion: str = ""
 
 
 class LLMError(Exception): ...

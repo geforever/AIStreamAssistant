@@ -36,17 +36,25 @@ _FB_KWARGS = {
     "fallback_kaomoji": "FB_KAO",
     "fallback_mood": "dizzy",
     "fallback_language": "zh",
+    "default_expression": "",
+    "default_motion": "",
+    "expression_change_frequency": 1.0,
+    "motion_change_frequency": 1.0,
 }
 
 
 def _build_orch(
     *, chat, llm, clock,
-    vip_window_ms=0,           # 默认无 vip 限流(简化测试)
+    vip_window_ms=0,
     batch_window_s=2,
-    batch_cooldown_ms=0,        # 默认无 cooldown
+    batch_cooldown_ms=0,
     buffer_size=10,
     tts=None, audio_sink=None,
+    random_fn=lambda: 0.0,
+    **overrides,
 ):
+    kw = dict(_FB_KWARGS)
+    kw.update(overrides)
     return Orchestrator(
         chat=chat,
         llm=llm,
@@ -59,7 +67,8 @@ def _build_orch(
         tts=tts,
         audio_sink=audio_sink,
         now_ms=clock,
-        **_FB_KWARGS,
+        random_fn=random_fn,
+        **kw,
     )
 
 
@@ -284,3 +293,67 @@ async def test_batch_path_drives_tts_with_batch_user_label():
     assert len(sink.writes) == 1
     _, user_tag = sink.writes[0]
     assert user_tag == "batch"
+
+
+# ============= Live2D 频率裁剪 =============
+
+@pytest.mark.asyncio
+async def test_vip_uses_llm_expression_when_random_passes():
+    """random_fn=lambda: 0.0 → 0 < 1.0 → 总是采纳 LLM 选的。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊", mood="happy",
+                                expression="Smile", motion="Tap")
+    clock = FakeClock()
+    orch = _build_orch(
+        chat=chat, llm=llm, clock=clock,
+        random_fn=lambda: 0.0,
+        expression_change_frequency=1.0,
+        motion_change_frequency=1.0,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨", is_priority=True)
+    await asyncio.sleep(0.05)
+    # chat 行为正确(expression 进了 log,不暴露 API)
+    assert chat.sent == ["@alice 好啊"]
+
+
+@pytest.mark.asyncio
+async def test_vip_uses_default_when_random_fails_frequency():
+    """random_fn returns 0.5,frequency=0.0 → 不采纳 → 用 default。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊", mood="happy",
+                                expression="Smile", motion="Tap")
+    clock = FakeClock()
+    orch = _build_orch(
+        chat=chat, llm=llm, clock=clock,
+        random_fn=lambda: 0.5,
+        expression_change_frequency=0.0,
+        motion_change_frequency=0.0,
+        default_expression="Normal",
+        default_motion="Idle",
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨", is_priority=True)
+    await asyncio.sleep(0.05)
+    # chat 不受影响
+    assert chat.sent == ["@alice 好啊"]
+
+
+@pytest.mark.asyncio
+async def test_batch_applies_frequency_too():
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("yo", mood="happy",
+                                expression="Smile", motion="Tap")
+    clock = FakeClock()
+    orch = _build_orch(
+        chat=chat, llm=llm, clock=clock,
+        batch_window_s=0.05,
+        random_fn=lambda: 0.0,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+    await asyncio.sleep(0.15)
+    assert chat.sent == ["yo"]

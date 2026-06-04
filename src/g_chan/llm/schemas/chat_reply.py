@@ -1,54 +1,80 @@
-"""JSON schema for the LLM chat reply.
+"""LLM 输出 JSON schema — 动态构造,expression/motion enum 由模型(或空+None)决定。
 
-Used with provider-native structured-output features such as
-Gemini ``responseSchema``, OpenAI Structured Outputs, etc.
-
-Field descriptions are in English so that LLMs interpret them consistently
-across locales — model behavior on schema descriptions is best in English.
+字段对齐:
+- src/g_chan/llm/base.py (parse_llm_json + LLMReply)
+- src/g_chan/prompts/output_rules.md (LLM 看到的文本描述)
 """
 from __future__ import annotations
 
 from g_chan.llm.base import LANGUAGE_VALUES, MOOD_VALUES
 
-CHAT_REPLY_SCHEMA: dict = {
-    "type": "object",
-    "properties": {
+
+def build_chat_reply_schema(
+    *,
+    expressions: list[str] | None = None,
+    motions: list[str] | None = None,
+) -> dict:
+    """构造 chat reply 的 JSON schema。
+
+    expression / motion 永远是 required 字段;enum 来自传入的 expressions/motions + "None"。
+    expressions=[] / motions=[] → enum 只有 "None"(LLM 被迫输出 "None")。
+    """
+    expressions = expressions or []
+    motions = motions or []
+
+    properties: dict = {
         "text": {
             "type": "string",
             "description": (
-                "Main reply text intended for text-to-speech (TTS) synthesis. "
-                "Must contain only spoken words. Do NOT include kaomoji, "
-                "emoticons, brackets, asterisks, or stage directions here; "
-                "decorative emoticons belong in the 'kaomoji' field."
+                "Main reply text intended for TTS. Spoken words only. "
+                "No kaomoji, emoji, brackets, @user, or stage directions."
             ),
         },
         "kaomoji": {
             "type": "string",
             "description": (
-                "Optional kaomoji (Japanese-style emoticon) for visual chat "
-                "decoration only. Will NOT be spoken by TTS. May be an empty "
-                "string when no decoration is appropriate."
+                "Optional kaomoji for chat decoration only (not spoken by TTS). "
+                "May be empty string."
             ),
         },
         "mood": {
             "type": "string",
             "enum": list(MOOD_VALUES),
             "description": (
-                "Emotion label used to drive the Live2D character expression. "
-                "Must be one of the listed enum values."
+                "Character emotion label (semantic, independent of Live2D physical expression). "
+                "Pick the one that best describes your inner feeling."
             ),
         },
         "language": {
             "type": "string",
             "enum": list(LANGUAGE_VALUES),
             "description": (
-                "Language code of the 'text' field; used to pick the TTS voice. "
-                "'zh' for Chinese (Mandarin), 'en' for English, 'ja' for Japanese. "
-                "Mirror the viewer's language: when the viewer writes English, "
-                "reply in English ('en'); when in Japanese, reply in Japanese ('ja'); "
-                "otherwise reply in Chinese ('zh')."
+                "Language code matching the actual language of the 'text' field. "
+                "Mirror the viewer's language."
             ),
         },
-    },
-    "required": ["text", "mood", "language"],
-}
+        "expression": {
+            "type": "string",
+            "enum": expressions + ["none"],
+            "description": (
+                "Live2D facial expression name (lowercase, from the loaded model). "
+                "Pick one whose name semantically matches the character's "
+                "current state, OR pick 'none' to keep current expression. "
+                "Skip expressions whose names you don't understand."
+            ),
+        },
+        "motion": {
+            "type": "string",
+            "enum": motions + ["none"],
+            "description": (
+                "Live2D body motion to play once (lowercase). Pick one when it "
+                "semantically fits the reply (e.g. 'tap' for a playful poke), "
+                "otherwise 'none'."
+            ),
+        },
+    }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": ["text", "mood", "language", "expression", "motion"],
+    }

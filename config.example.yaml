@@ -51,6 +51,25 @@ tts:
   output_dir: "out"
   timeout_s: 10
 
+# Live2D 角色表情和动作配置
+live2d:
+  # 启用 Live2D 表情/动作输出(false = 纯 chat 模式,LLM 不输出 expression/motion)
+  enabled: true
+
+  # 模型路径,空 = 自动扫描 Live2D/ 下第一个子文件夹递归找 *.model3.json
+  # (auto-detect 找到的例:Live2D/Epsilon_free/runtime/Epsilon_free.model3.json)
+  model_path: ""
+
+  # AI 调用失败 / 频率裁剪 fail 时使用的表情和动作名
+  # 空字符串 = 不传任何 expression / motion(角色保持当前状态)
+  default_expression: ""
+  default_motion: ""
+
+  # 采纳 LLM 选择的概率 [0.0, 1.0]
+  # 1.0 = 每次都用 LLM 选的;0.0 = 永远不变;0.3 = 30% 概率
+  expression_change_frequency: 1.0
+  motion_change_frequency: 0.3      # motion 默认偏保守(别动不动就播)
+
 logging:
   # debug | info | warning | error
   level: "info"

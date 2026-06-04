@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from g_chan.config import AppConfig, load_config
 
@@ -281,3 +282,106 @@ logging:
     assert cfg.interaction.batch_window_s == 0
     assert cfg.interaction.batch_cooldown_ms == 0
     assert cfg.interaction.buffer_size == 0
+
+
+def test_loads_live2d_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+stream_context:
+  poll_interval_ms: 30000
+live2d:
+  enabled: true
+  model_path: "Live2D/Foo/model.model3.json"
+  default_expression: "Normal"
+  default_motion: "Idle"
+  expression_change_frequency: 0.5
+  motion_change_frequency: 0.2
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.live2d.enabled is True
+    assert cfg.live2d.model_path == "Live2D/Foo/model.model3.json"
+    assert cfg.live2d.default_expression == "normal"
+    assert cfg.live2d.default_motion == "idle"
+    assert cfg.live2d.expression_change_frequency == 0.5
+    assert cfg.live2d.motion_change_frequency == 0.2
+
+
+def test_live2d_defaults_when_section_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+stream_context:
+  poll_interval_ms: 30000
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.live2d.enabled is True
+    assert cfg.live2d.model_path == ""
+    assert cfg.live2d.default_expression == ""
+    assert cfg.live2d.default_motion == ""
+    assert cfg.live2d.expression_change_frequency == 1.0
+    assert cfg.live2d.motion_change_frequency == 0.3
+
+
+def test_live2d_frequency_out_of_range_rejected(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+stream_context:
+  poll_interval_ms: 30000
+live2d:
+  expression_change_frequency: 2.5
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    with pytest.raises(ValidationError):
+        load_config(cfg_path)

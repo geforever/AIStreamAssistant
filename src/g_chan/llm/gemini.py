@@ -17,7 +17,6 @@ from g_chan.llm.base import (
     Mood,
     parse_llm_json,
 )
-from g_chan.llm.schemas import CHAT_REPLY_SCHEMA
 
 
 class GeminiProvider(LLMProvider):
@@ -26,17 +25,27 @@ class GeminiProvider(LLMProvider):
         *,
         api_key: str,
         model: str,
+        schema: dict,
         fallback_text: str,
         fallback_kaomoji: str,
         fallback_mood: Mood,
         fallback_language: Language,
+        fallback_expression: str = "",
+        fallback_motion: str = "",
+        available_expressions: list[str] | None = None,
+        available_motions: list[str] | None = None,
     ):
         self._client = genai.Client(api_key=api_key)
         self._model = model
+        self._schema = schema
         self._fallback_text = fallback_text
         self._fallback_kaomoji = fallback_kaomoji
         self._fallback_mood = fallback_mood
         self._fallback_language = fallback_language
+        self._fallback_expression = fallback_expression
+        self._fallback_motion = fallback_motion
+        self._available_expressions = available_expressions or []
+        self._available_motions = available_motions or []
 
     async def generate(
         self,
@@ -52,14 +61,11 @@ class GeminiProvider(LLMProvider):
              "parts": [{"text": m.content}]}
             for m in messages if m.role != "system"
         ]
-        # google-genai 字段名是 camelCase。用显式 GenerateContentConfig 避免 dict 写法被忽略
-        # thinkingBudget=0 关闭 2.5 系列默认的内部推理 — 短聊场景不需要,
-        # 关掉可节省 token + 降低延迟,也避免 JSON 输出被 thinking 占用 token 截断
         config = types.GenerateContentConfig(
             temperature=temperature,
             maxOutputTokens=max_tokens,
             responseMimeType="application/json",
-            responseSchema=CHAT_REPLY_SCHEMA,
+            responseSchema=self._schema,
             systemInstruction=system,
             thinkingConfig=types.ThinkingConfig(thinkingBudget=0),
         )
@@ -81,12 +87,16 @@ class GeminiProvider(LLMProvider):
         latency_ms = int((time.monotonic() - t0) * 1000)
 
         raw = resp.text or ""
-        text, kaomoji, mood, language = parse_llm_json(
+        text, kaomoji, mood, language, expression, motion = parse_llm_json(
             raw,
             fallback_text=self._fallback_text,
             fallback_kaomoji=self._fallback_kaomoji,
             fallback_mood=self._fallback_mood,
             fallback_language=self._fallback_language,
+            fallback_expression=self._fallback_expression,
+            fallback_motion=self._fallback_motion,
+            available_expressions=self._available_expressions,
+            available_motions=self._available_motions,
         )
         usage = getattr(resp, "usage_metadata", None)
         return LLMReply(
@@ -94,6 +104,8 @@ class GeminiProvider(LLMProvider):
             kaomoji=kaomoji,
             mood=mood,
             language=language,
+            expression=expression,
+            motion=motion,
             raw=raw,
             latency_ms=latency_ms,
             tokens_in=getattr(usage, "prompt_token_count", 0) if usage else 0,

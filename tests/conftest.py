@@ -51,9 +51,12 @@ def make_reply(
     mood: Mood = "happy",
     kaomoji: str = "",
     language: Language = "zh",
+    expression: str = "",
+    motion: str = "",
 ) -> LLMReply:
     return LLMReply(text=text, kaomoji=kaomoji, mood=mood, language=language,
-                    raw=text, latency_ms=42, tokens_in=10, tokens_out=20)
+                    raw=text, latency_ms=42, tokens_in=10, tokens_out=20,
+                    expression=expression, motion=motion)
 
 
 class FakeTTS(TTSEngine):
