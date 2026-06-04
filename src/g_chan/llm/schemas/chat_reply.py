@@ -17,6 +17,7 @@ def build_chat_reply_schema(
     """构造 chat reply 的 JSON schema。
 
     expression / motion 永远是 required 字段;enum 来自传入的 expressions/motions + "None"。
+    expressions/motions 名字按 model3.json 原样大小写,不归一化。
     expressions=[] / motions=[] → enum 只有 "None"(LLM 被迫输出 "None")。
     """
     expressions = expressions or []
@@ -55,21 +56,21 @@ def build_chat_reply_schema(
         },
         "expression": {
             "type": "string",
-            "enum": expressions + ["none"],
+            "enum": expressions + ["None"],
             "description": (
-                "Live2D facial expression name (lowercase, from the loaded model). "
+                "Live2D facial expression name, EXACT case from the loaded model. "
                 "Pick one whose name semantically matches the character's "
-                "current state, OR pick 'none' to keep current expression. "
+                "current state, OR pick 'None' to keep current expression. "
                 "Skip expressions whose names you don't understand."
             ),
         },
         "motion": {
             "type": "string",
-            "enum": motions + ["none"],
+            "enum": motions + ["None"],
             "description": (
-                "Live2D body motion to play once (lowercase). Pick one when it "
-                "semantically fits the reply (e.g. 'tap' for a playful poke), "
-                "otherwise 'none'."
+                "Live2D body motion to play once, EXACT case from the loaded model. "
+                "Pick one when it semantically fits the reply (e.g. 'Tap' for a "
+                "playful poke), otherwise 'None'."
             ),
         },
     }

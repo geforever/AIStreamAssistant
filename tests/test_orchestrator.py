@@ -50,6 +50,7 @@ def _build_orch(
     batch_cooldown_ms=0,
     buffer_size=10,
     tts=None, audio_sink=None,
+    viewer_sink=None,
     random_fn=lambda: 0.0,
     **overrides,
 ):
@@ -66,6 +67,7 @@ def _build_orch(
         buffer_size=buffer_size,
         tts=tts,
         audio_sink=audio_sink,
+        viewer_sink=viewer_sink,
         now_ms=clock,
         random_fn=random_fn,
         **kw,
@@ -357,3 +359,74 @@ async def test_batch_applies_frequency_too():
     await chat.emit("alice", "嗨")
     await asyncio.sleep(0.15)
     assert chat.sent == ["yo"]
+
+
+# ============= ViewerSink 集成 =============
+
+@pytest.mark.asyncio
+async def test_vip_pushes_expression_motion_audio_to_viewer():
+    from tests.conftest import FakeViewerSink
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊", mood="happy",
+                                expression="smile", motion="tap")
+    tts = FakeTTS()
+    sink = FakeAudioSink()
+    viewer = FakeViewerSink()
+    clock = FakeClock()
+    orch = _build_orch(
+        chat=chat, llm=llm, clock=clock,
+        tts=tts, audio_sink=sink, viewer_sink=viewer,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨", is_priority=True)
+    await asyncio.sleep(0.05)
+
+    assert viewer.expressions == ["smile"]
+    assert viewer.motions == ["tap"]
+    assert len(viewer.audios) == 1
+    audio_data, user, text = viewer.audios[0]
+    assert audio_data == b"FAKEAUDIO"
+    assert user == "alice"
+    assert text == "好啊"
+
+
+@pytest.mark.asyncio
+async def test_batch_pushes_to_viewer_with_batch_user_label():
+    from tests.conftest import FakeViewerSink
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("yo", mood="happy",
+                                expression="smile", motion="")
+    tts = FakeTTS()
+    sink = FakeAudioSink()
+    viewer = FakeViewerSink()
+    clock = FakeClock()
+    orch = _build_orch(
+        chat=chat, llm=llm, clock=clock,
+        batch_window_s=0.05,
+        tts=tts, audio_sink=sink, viewer_sink=viewer,
+    )
+    orch.wire()
+    await chat.emit("alice", "嗨")
+    await asyncio.sleep(0.15)
+
+    assert viewer.expressions == ["smile"]
+    assert viewer.motions == [""]
+    assert len(viewer.audios) == 1
+    _, user, _ = viewer.audios[0]
+    assert user == "batch"
+
+
+@pytest.mark.asyncio
+async def test_works_without_viewer_sink_passed():
+    """viewer_sink=None → Orchestrator 用 NoopViewerSink,不崩,chat 正常发。"""
+    chat = FakeChat()
+    llm = FakeLLM()
+    llm.next_reply = make_reply("好啊", mood="happy", expression="smile")
+    clock = FakeClock()
+    orch = _build_orch(chat=chat, llm=llm, clock=clock)   # 没 viewer_sink
+    orch.wire()
+    await chat.emit("alice", "嗨", is_priority=True)
+    await asyncio.sleep(0.05)
+    assert chat.sent == ["@alice 好啊"]

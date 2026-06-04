@@ -318,8 +318,8 @@ logging:
     cfg = load_config(cfg_path)
     assert cfg.live2d.enabled is True
     assert cfg.live2d.model_path == "Live2D/Foo/model.model3.json"
-    assert cfg.live2d.default_expression == "normal"
-    assert cfg.live2d.default_motion == "idle"
+    assert cfg.live2d.default_expression == "Normal"
+    assert cfg.live2d.default_motion == "Idle"
     assert cfg.live2d.expression_change_frequency == 0.5
     assert cfg.live2d.motion_change_frequency == 0.2
 
@@ -385,3 +385,70 @@ logging:
 """)
     with pytest.raises(ValidationError):
         load_config(cfg_path)
+
+
+def test_loads_server_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+stream_context:
+  poll_interval_ms: 30000
+server:
+  enabled: true
+  host: "0.0.0.0"
+  port: 9000
+  static_dir: "viewer/dist"
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.server.enabled is True
+    assert cfg.server.host == "0.0.0.0"
+    assert cfg.server.port == 9000
+    assert cfg.server.static_dir == "viewer/dist"
+
+
+def test_server_defaults_when_section_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWITCH_OAUTH", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_ID", "x")
+    monkeypatch.setenv("TWITCH_CLIENT_SECRET", "x")
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    cfg_path = write_yaml(tmp_path, """
+twitch:
+  channel: "alice"
+  bot_username: "g_bot"
+  trigger: "@G酱"
+llm:
+  provider: "gemini"
+  model: "gemini-2.5-flash"
+  temperature: 0.9
+  max_tokens: 300
+  timeout_s: 10
+persona:
+  prompt_file: "prompts/default.md"
+stream_context:
+  poll_interval_ms: 30000
+logging:
+  level: "info"
+  file: "logs/g.log"
+""")
+    cfg = load_config(cfg_path)
+    assert cfg.server.enabled is True
+    assert cfg.server.host == "localhost"
+    assert cfg.server.port == 8765
+    assert cfg.server.static_dir == "viewer/dist"

@@ -7,7 +7,7 @@ from typing import Literal
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from g_chan.llm.base import Language, Mood
 
@@ -100,11 +100,20 @@ class Live2DConfig(BaseModel):
     expression_change_frequency: float = Field(default=1.0, ge=0.0, le=1.0)
     motion_change_frequency: float = Field(default=0.3, ge=0.0, le=1.0)
 
-    @field_validator("default_expression", "default_motion", mode="before")
-    @classmethod
-    def _to_lower(cls, v: object) -> object:
-        """项目约定 expression / motion 名一律小写,自动归一化用户输入。"""
-        return v.lower() if isinstance(v, str) else v
+
+class ServerConfig(BaseModel):
+    """WebSocket + 静态文件 server 配置(viewer 连接和资源加载入口)。
+
+    enabled=False:
+    - 不启动 FastAPI / uvicorn
+    - Orchestrator 用 NoopViewerSink,所有 push 都 no-op
+    - 适合纯 chat 模式不渲染 Live2D 的场景
+    """
+    enabled: bool = True
+    host: str = "localhost"
+    port: int = 8765
+    # Phase 3b viewer 构建产物的目录,不存在 → 不挂载静态文件(只服 /ws + /health)
+    static_dir: str = "viewer/dist"
 
 
 def _default_voices() -> dict[Language, str]:
@@ -137,6 +146,7 @@ class AppConfig(BaseModel):
     tts: TTSConfig = Field(default_factory=TTSConfig)
     interaction: InteractionConfig = Field(default_factory=InteractionConfig)
     live2d: Live2DConfig = Field(default_factory=Live2DConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
     logging: LoggingConfig
 
 

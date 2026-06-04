@@ -92,3 +92,20 @@ class FakeAudioSink(AudioSink):
         if self.should_raise:
             raise self.should_raise
         return f"/fake/path/{user}.mp3"
+
+
+class FakeViewerSink:
+    """记录所有 push_* 调用,供 orchestrator 测试断言。"""
+    def __init__(self):
+        self.expressions: list[str] = []
+        self.motions: list[str] = []
+        self.audios: list[tuple[bytes, str, str]] = []   # (audio_data, user, text)
+
+    async def push_expression(self, name: str) -> None:
+        self.expressions.append(name)
+
+    async def push_motion(self, name: str) -> None:
+        self.motions.append(name)
+
+    async def push_audio(self, audio: TTSAudio, *, user: str, text: str) -> None:
+        self.audios.append((audio.data, user, text))

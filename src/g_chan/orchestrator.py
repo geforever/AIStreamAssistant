@@ -15,6 +15,7 @@ from g_chan.persona.loader import StreamContext
 from g_chan.prompts import build_batch_user_message
 from g_chan.rate_limiter import RateLimiter
 from g_chan.tts.base import AudioSink, TTSEngine, TTSError
+from g_chan.viewer_sink import NoopViewerSink, ViewerSink
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class Orchestrator:
         motion_change_frequency: float = 1.0,
         tts: TTSEngine | None = None,
         audio_sink: AudioSink | None = None,
+        viewer_sink: ViewerSink | None = None,
         now_ms: Callable[[], float] = _default_now_ms,
         random_fn: Callable[[], float] = random.random,
     ):
@@ -76,6 +78,7 @@ class Orchestrator:
         self._motion_change_frequency = motion_change_frequency
         self._tts = tts
         self._audio_sink = audio_sink
+        self._viewer_sink: ViewerSink = viewer_sink or NoopViewerSink()
         self._now_ms = now_ms
         self._random_fn = random_fn
         self._last_batch_started_at_ms: float = -float("inf")
@@ -111,6 +114,9 @@ class Orchestrator:
             msg.user, reply.mood, reply.language, reply.text, reply.kaomoji,
             expression, motion,
         )
+
+        await self._viewer_sink.push_expression(expression)
+        await self._viewer_sink.push_motion(motion)
 
         await self._do_tts(reply.text, language=reply.language, user=msg.user)
         chat_body = (
@@ -179,6 +185,9 @@ class Orchestrator:
             expression, motion,
         )
 
+        await self._viewer_sink.push_expression(expression)
+        await self._viewer_sink.push_motion(motion)
+
         await self._do_tts(reply.text, language=reply.language, user="batch")
         chat_body = (
             f"{reply.text} {reply.kaomoji}".strip() if reply.kaomoji else reply.text
@@ -204,7 +213,7 @@ class Orchestrator:
         return expression, motion
 
     async def _do_tts(self, text: str, *, language: Language, user: str) -> None:
-        if self._tts is None or self._audio_sink is None:
+        if self._tts is None:
             return
         if not text.strip():
             return
@@ -216,10 +225,14 @@ class Orchestrator:
         except Exception as e:  # noqa: BLE001
             log.exception("tts synth crashed: %s", e)
             return
-        try:
-            await self._audio_sink.write(audio, user=user)
-        except Exception as e:  # noqa: BLE001
-            log.warning("audio sink write failed: %s", e)
+
+        if self._audio_sink is not None:
+            try:
+                await self._audio_sink.write(audio, user=user)
+            except Exception as e:  # noqa: BLE001
+                log.warning("audio sink write failed: %s", e)
+
+        await self._viewer_sink.push_audio(audio, user=user, text=text)
 
     def _fallback_reply(self) -> LLMReply:
         return LLMReply(

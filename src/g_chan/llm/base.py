@@ -100,33 +100,33 @@ def parse_llm_json(
 
 
 def _normalize_or_fallback(raw, available, fallback) -> str:
-    """规范化 LLM 输出的 expression/motion 值(项目约定:全小写)。
+    """裁剪 LLM 输出的 expression/motion 值 — 按 model3.json 原样大小写匹配。
 
-    available 假定已经全部小写(model_loader 入库时已规范化)。
-    LLM 输出和 fallback 入参做防御性 lower() 后比对。
+    名字必须严格匹配模型里的定义(Cubism runtime 按原始大小写索引)。
+    "None" / "none" 是协议层 sentinel,代表"维持当前状态",不参与匹配。
 
-    - available 为空(Live2D 没模型) → 总返回 ""
-    - raw 是 None / "" / "none"(任意大小写)→ 规范化为 ""
-    - raw 在 available 里 → 返回小写化的 raw
-    - raw 不在 → 用 fallback(也要在 available 里,不然 "")
+    - available 为空(Live2D 没模型)→ 总返回 ""
+    - raw 是 None / "" / "none" / "None" → 返回 ""
+    - raw 严格匹配 available → 返回 raw
+    - raw 不匹配 → 用 fallback(也要严格匹配 available,否则 "")
     """
     if not available:
         return ""
 
-    raw_lower = raw.lower() if isinstance(raw, str) else ""
-    if raw_lower in ("", "none"):
+    raw_str = raw if isinstance(raw, str) else ""
+    if raw_str in ("", "none", "None"):
         normalized = ""
-    elif raw_lower in available:
-        return raw_lower
+    elif raw_str in available:
+        return raw_str
     else:
         normalized = ""
 
     if normalized == "" and fallback:
-        fb_lower = fallback.lower() if isinstance(fallback, str) else ""
-        if fb_lower in ("", "none"):
+        fb_str = fallback if isinstance(fallback, str) else ""
+        if fb_str in ("", "none", "None"):
             return ""
-        if fb_lower in available:
-            return fb_lower
+        if fb_str in available:
+            return fb_str
         return ""
     return normalized
 

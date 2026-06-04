@@ -38,21 +38,21 @@ def test_load_model_info_parses_expressions_and_motions(tmp_path):
     info = load_model_info(p)
     assert isinstance(info, Live2DModel)
     assert info.path == p
-    assert info.expressions == ["smile", "angry", "f01"]
-    assert sorted(info.motions) == ["idle", "tap"]
+    assert info.expressions == ["Smile", "Angry", "f01"]
+    assert sorted(info.motions) == ["Idle", "Tap"]
 
 
 def test_load_model_info_handles_missing_expressions_section(tmp_path):
     p = _write_model_file(tmp_path, expressions=None, motions={"Idle": []})
     info = load_model_info(p)
     assert info.expressions == []
-    assert info.motions == ["idle"]
+    assert info.motions == ["Idle"]
 
 
 def test_load_model_info_handles_missing_motions_section(tmp_path):
     p = _write_model_file(tmp_path, expressions=[{"Name": "X", "File": "x"}])
     info = load_model_info(p)
-    assert info.expressions == ["x"]
+    assert info.expressions == ["X"]
     assert info.motions == []
 
 

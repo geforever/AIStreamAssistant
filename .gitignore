@@ -14,4 +14,10 @@ build/
 .DS_Store
 .claude
 .idea
-.out
+.out/
+
+# viewer (Vite + npm)
+node_modules/
+viewer/dist/
+viewer/dist.old.*/
+viewer/.vite/

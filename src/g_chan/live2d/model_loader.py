@@ -35,15 +35,16 @@ def load_model_info(path: Path) -> Live2DModel:
             "(is this a valid Cubism 3+ model?)"
         )
 
-    # 全部小写化 — 项目约定:LLM/schema/WebSocket/比对 都用小写
+    # 按 model3.json 原样保留大小写 — Cubism runtime 按这个名字索引,
+    # 后端到 LLM 到 viewer 全链路透传,不做归一化
     expressions = [
-        str(e.get("Name", "")).lower()
+        str(e["Name"])
         for e in refs.get("Expressions", []) or []
         if isinstance(e, dict) and e.get("Name")
     ]
     motions_dict = refs.get("Motions", {}) or {}
     motions = (
-        [k.lower() for k in motions_dict.keys()]
+        list(motions_dict.keys())
         if isinstance(motions_dict, dict) else []
     )
 

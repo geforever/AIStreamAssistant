@@ -46,8 +46,8 @@ def test_creates_gemini_without_model_uses_empty_enums():
         p = create_provider(cfg, live2d_cfg=_live2d_enabled(), live2d_model=None)
         assert isinstance(p, GeminiProvider)
         # provider 内部存了 schema,检查 expression enum
-        assert p._schema["properties"]["expression"]["enum"] == ["none"]
-        assert p._schema["properties"]["motion"]["enum"] == ["none"]
+        assert p._schema["properties"]["expression"]["enum"] == ["None"]
+        assert p._schema["properties"]["motion"]["enum"] == ["None"]
 
 
 @pytest.mark.parametrize("provider", ["claude", "openai", "qwen"])

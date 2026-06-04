@@ -62,6 +62,7 @@ live2d:
 
   # AI 调用失败 / 频率裁剪 fail 时使用的表情和动作名
   # 空字符串 = 不传任何 expression / motion(角色保持当前状态)
+  # 名字必须跟 model3.json 里 FileReferences.Expressions[*].Name / Motions key 完全一致(大小写敏感)
   default_expression: ""
   default_motion: ""
 
@@ -69,6 +70,16 @@ live2d:
   # 1.0 = 每次都用 LLM 选的;0.0 = 永远不变;0.3 = 30% 概率
   expression_change_frequency: 1.0
   motion_change_frequency: 0.3      # motion 默认偏保守(别动不动就播)
+
+# WebSocket + 静态文件 server (Phase 3a:推 expression/motion/audio 给 viewer)
+server:
+  # 启用 → 起 FastAPI 跟 Twitch chat 并行跑
+  # 禁用 → 纯 chat 模式,LLM 仍输出 expression/motion 但不推任何地方
+  enabled: true
+  host: "localhost"
+  port: 8765
+  # viewer 构建产物的目录,目录不存在则只服 /ws 端点不挂静态文件
+  static_dir: "viewer/dist"
 
 logging:
   # debug | info | warning | error

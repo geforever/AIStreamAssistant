@@ -6,6 +6,8 @@ import logging
 import sys
 from pathlib import Path
 
+import uvicorn
+
 from g_chan.chat.twitch import TwitchChatAdapter
 from g_chan.config import load_config
 from g_chan.live2d.model_loader import (
@@ -19,8 +21,11 @@ from g_chan.orchestrator import Orchestrator
 from g_chan.persona.loader import PersonaLoader
 from g_chan.persona.stream_context import StreamContextProvider, TwitchHelixClient
 from g_chan.prompts import render_output_rules
+from g_chan.server.app import create_app
+from g_chan.server.connection_manager import ConnectionManager
 from g_chan.tts.edge import EdgeTTSEngine
 from g_chan.tts.file_sink import FileAudioSink
+from g_chan.viewer_sink import NoopViewerSink, ViewerSink, WSViewerSink
 
 log = logging.getLogger("g_chan")
 
@@ -128,6 +133,33 @@ async def amain() -> int:
     else:
         log.info("tts disabled (config.tts.enabled=false)")
 
+    # Viewer sink + WebSocket server (Phase 3a)
+    viewer_sink: ViewerSink
+    server_task: asyncio.Task | None = None
+    if cfg.server.enabled:
+        conn_manager = ConnectionManager()
+        viewer_sink = WSViewerSink(conn_manager)
+        live2d_root = "Live2D" if live2d_model is not None else None
+        app = create_app(
+            conn_manager,
+            static_dir=cfg.server.static_dir,
+            live2d_dir=live2d_root,
+        )
+        server_cfg = uvicorn.Config(
+            app=app,
+            host=cfg.server.host,
+            port=cfg.server.port,
+            log_level=cfg.logging.level,
+            access_log=False,
+        )
+        server = uvicorn.Server(server_cfg)
+        server_task = asyncio.create_task(server.serve())
+        log.info("ws server enabled at ws://%s:%d/ws",
+                 cfg.server.host, cfg.server.port)
+    else:
+        viewer_sink = NoopViewerSink()
+        log.info("ws server disabled — viewer_sink is no-op")
+
     orch = Orchestrator(
         chat=chat, llm=llm, persona=persona, stream_ctx=sctx,
         vip_window_ms=cfg.interaction.vip_window_ms,
@@ -144,6 +176,7 @@ async def amain() -> int:
         motion_change_frequency=cfg.live2d.motion_change_frequency,
         tts=tts_engine,
         audio_sink=audio_sink,
+        viewer_sink=viewer_sink,
     )
     orch.wire()
 
@@ -161,6 +194,8 @@ async def amain() -> int:
     finally:
         if polling is not None:
             polling.cancel()
+        if server_task is not None:
+            server_task.cancel()
         await chat.disconnect()
     return 0
 

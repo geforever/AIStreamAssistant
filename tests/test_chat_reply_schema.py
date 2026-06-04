@@ -19,24 +19,24 @@ def test_schema_with_expressions_and_motions_populates_enums():
         motions=["idle", "tap"],
     )
     props = schema["properties"]
-    assert set(props["expression"]["enum"]) == {"smile", "angry", "sad", "none"}
-    assert set(props["motion"]["enum"]) == {"idle", "tap", "none"}
+    assert set(props["expression"]["enum"]) == {"smile", "angry", "sad", "None"}
+    assert set(props["motion"]["enum"]) == {"idle", "tap", "None"}
 
 
 def test_schema_empty_lists_still_have_none_in_enum():
-    """没传 expressions/motions → enum 只有 ["none"](LLM 被迫输出 "none")。"""
+    """没传 expressions/motions → enum 只有 ["None"](LLM 被迫输出 "None")。"""
     schema = build_chat_reply_schema(expressions=[], motions=[])
     props = schema["properties"]
-    assert props["expression"]["enum"] == ["none"]
-    assert props["motion"]["enum"] == ["none"]
+    assert props["expression"]["enum"] == ["None"]
+    assert props["motion"]["enum"] == ["None"]
 
 
 def test_schema_none_args_treated_as_empty():
     """显式传 None → 当空 list 处理。"""
     schema = build_chat_reply_schema(expressions=None, motions=None)
     props = schema["properties"]
-    assert props["expression"]["enum"] == ["none"]
-    assert props["motion"]["enum"] == ["none"]
+    assert props["expression"]["enum"] == ["None"]
+    assert props["motion"]["enum"] == ["None"]
 
 
 def test_schema_mood_enum_always_contains_8_values():
