@@ -48,13 +48,13 @@ async def amain() -> int:
     # 加载人格设定
     persona = PersonaLoader(
         base_path=cfg.persona.prompt_file,
-        include_stream_context=cfg.persona.include_stream_context,
+        include_stream_context=cfg.stream_context.enabled,
     )
     # 创建获取Twitch直播标题内容以提供上下文（如果启用）
     # TODO : 目前StreamContextProvider仅支持Twitch，后续需要重构以适配其他平台的直播上下文获取
     sctx: StreamContextProvider | _NullStreamCtx
     polling: asyncio.Task | None = None
-    if cfg.persona.include_stream_context:
+    if cfg.stream_context.enabled:
         helix = TwitchHelixClient(
             client_id=cfg.twitch.client_id,
             client_secret=cfg.twitch.client_secret,

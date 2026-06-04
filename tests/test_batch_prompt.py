@@ -18,16 +18,18 @@ def test_builds_numbered_list_of_messages():
     assert "[3] charlie: 哈哈" in out
 
 
-def test_includes_instructions_in_message():
+def test_template_var_messages_is_substituted():
+    """{{messages}} 占位符必须被替换 — 不能在最终文本里残留 {{...}}。"""
     msgs = [_msg("alice", "嗨")]
     out = build_batch_user_message(msgs)
-    # 包含挑选 / 沉默 / 不要@ 这些关键指令
-    assert "挑选" in out
-    assert "沉默" in out
-    assert "@user" in out  # 提到不要在 text 里 @user
+    assert "{{messages}}" not in out
+    assert "{{" not in out
+    assert "alice" in out
 
 
 def test_empty_list_still_returns_valid_string():
+    """空 buffer 仍返回合法 string(不崩),且不残留 {{messages}}。"""
     out = build_batch_user_message([])
     assert isinstance(out, str)
     assert len(out) > 0
+    assert "{{messages}}" not in out

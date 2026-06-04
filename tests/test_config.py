@@ -29,7 +29,6 @@ llm:
   timeout_s: 10
 persona:
   prompt_file: "prompts/default.md"
-  include_stream_context: true
 stream_context:
   poll_interval_ms: 30000
 logging:
@@ -63,7 +62,6 @@ llm:
   timeout_s: 10
 persona:
   prompt_file: "prompts/default.md"
-  include_stream_context: true
 stream_context:
   poll_interval_ms: 30000
 logging:
@@ -92,7 +90,6 @@ llm:
   timeout_s: 10
 persona:
   prompt_file: "prompts/default.md"
-  include_stream_context: true
 stream_context:
   poll_interval_ms: 30000
 logging:
@@ -121,7 +118,6 @@ llm:
   timeout_s: 10
 persona:
   prompt_file: "prompts/default.md"
-  include_stream_context: true
 stream_context:
   poll_interval_ms: 30000
 tts:
@@ -168,7 +164,6 @@ llm:
   timeout_s: 10
 persona:
   prompt_file: "prompts/default.md"
-  include_stream_context: true
 stream_context:
   poll_interval_ms: 30000
 logging:
@@ -201,7 +196,6 @@ llm:
   timeout_s: 10
 persona:
   prompt_file: "prompts/default.md"
-  include_stream_context: true
 stream_context:
   poll_interval_ms: 30000
 interaction:
@@ -238,7 +232,6 @@ llm:
   timeout_s: 10
 persona:
   prompt_file: "prompts/default.md"
-  include_stream_context: true
 stream_context:
   poll_interval_ms: 30000
 logging:
@@ -272,7 +265,6 @@ llm:
   timeout_s: 10
 persona:
   prompt_file: "prompts/default.md"
-  include_stream_context: true
 stream_context:
   poll_interval_ms: 30000
 interaction:

@@ -43,10 +43,12 @@ class LLMConfig(BaseModel):
 
 class PersonaConfig(BaseModel):
     prompt_file: str = "prompts/default.md"
-    include_stream_context: bool = True
 
 
 class StreamContextConfig(BaseModel):
+    # 启用 Twitch Helix 轮询 + 把直播间标题/游戏注入 LLM prompt
+    # 需要 Twitch developer app(client_id + client_secret),不申请就设 false
+    enabled: bool = True
     poll_interval_ms: int = 30000
 
 
