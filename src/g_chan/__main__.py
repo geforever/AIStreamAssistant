@@ -144,6 +144,11 @@ async def amain() -> int:
             conn_manager,
             static_dir=cfg.server.static_dir,
             live2d_dir=live2d_root,
+            init_payload={
+                "default_expression": cfg.live2d.default_expression,
+                "default_motion": cfg.live2d.default_motion,
+                "expression_revert_ms": cfg.live2d.expression_revert_ms,
+            },
         )
         server_cfg = uvicorn.Config(
             app=app,

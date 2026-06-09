@@ -17,6 +17,10 @@ async function main() {
 
   const ws = new WSClient(WS_URL, async (msg: ServerMessage) => {
     switch (msg.type) {
+      case "init":
+        console.log("← init", msg);
+        live2d.setDefaults(msg.default_expression, msg.expression_revert_ms);
+        break;
       case "expression":
         console.log("← expression", msg.name);
         live2d.applyExpression(msg.name);

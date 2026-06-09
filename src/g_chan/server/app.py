@@ -17,11 +17,13 @@ def create_app(
     *,
     static_dir: str | None = None,
     live2d_dir: str | None = None,
+    init_payload: dict | None = None,
 ) -> FastAPI:
     """構造 FastAPI app。
 
     static_dir 不存在時:不挂 / 路徑,/ 會 404(正常,只服 /health + /ws)。
     live2d_dir 不存在時:不挂 /live2d,viewer 無法 fetch 模型資源。
+    init_payload:WS 連接建立後立即發給該客戶端的初始化消息(viewer 用於同步 default 等配置)。
     """
     app = FastAPI(title="g_chan viewer server")
 
@@ -32,6 +34,11 @@ def create_app(
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket):
         await connection_manager.connect(websocket)
+        if init_payload is not None:
+            try:
+                await websocket.send_json({"type": "init", **init_payload})
+            except Exception as e:  # noqa: BLE001
+                log.warning("ws init send failed: %s", e)
         try:
             while True:
                 msg = await websocket.receive_json()

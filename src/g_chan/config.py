@@ -100,6 +100,10 @@ class Live2DConfig(BaseModel):
     expression_change_frequency: float = Field(default=1.0, ge=0.0, le=1.0)
     motion_change_frequency: float = Field(default=0.3, ge=0.0, le=1.0)
 
+    # 表情应用后多少毫秒回到 default_expression(0 = 不自动恢复,保持当前)
+    # viewer 收到非 default 的表情后启动 setTimeout,新表情到达会取消上一次的回退
+    expression_revert_ms: int = Field(default=1000, ge=0)
+
 
 class ServerConfig(BaseModel):
     """WebSocket + 静态文件 server 配置(viewer 连接和资源加载入口)。

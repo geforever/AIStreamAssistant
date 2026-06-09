@@ -322,6 +322,8 @@ logging:
     assert cfg.live2d.default_motion == "Idle"
     assert cfg.live2d.expression_change_frequency == 0.5
     assert cfg.live2d.motion_change_frequency == 0.2
+    # 未在 YAML 设置 → 默认 1000ms 自动回到 default_expression
+    assert cfg.live2d.expression_revert_ms == 1000
 
 
 def test_live2d_defaults_when_section_missing(tmp_path, monkeypatch):

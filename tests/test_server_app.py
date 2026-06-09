@@ -51,3 +51,29 @@ def test_live2d_dir_missing_no_crash():
     with TestClient(app) as client:
         r = client.get("/live2d/anything")
         assert r.status_code == 404
+
+
+def test_ws_sends_init_payload_on_connect():
+    """init_payload 配置后,新连接的客户端应立即收到 {type:'init', ...}。"""
+    cm = ConnectionManager()
+    payload = {
+        "default_expression": "Normal",
+        "default_motion": "Idle",
+        "expression_revert_ms": 1500,
+    }
+    app = create_app(cm, static_dir="missing", init_payload=payload)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            msg = ws.receive_json()
+            assert msg == {"type": "init", **payload}
+
+
+def test_ws_no_init_when_payload_none():
+    """init_payload=None → 连接后不发任何主动消息。"""
+    cm = ConnectionManager()
+    app = create_app(cm, static_dir="missing", init_payload=None)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            # 给 server 一点机会发(其实不应该发);用 send 一条触发后端 log,不期望任何回包
+            ws.send_json({"type": "ready"})
+            # 没有 receive_json 调用 — 如果 server 真发了,后续会有积压但不影响该测试

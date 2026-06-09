@@ -11,6 +11,16 @@ export class Live2DController {
   private app: PIXI.Application | null = null;
   private audioCtx: AudioContext | null = null;
 
+  // 由后端 init 消息同步;applyExpression 后用于调度回退到 default
+  private defaultExpression = "";
+  private expressionRevertMs = 0;
+  private revertTimer: number | null = null;
+
+  setDefaults(defaultExpression: string, expressionRevertMs: number): void {
+    this.defaultExpression = defaultExpression;
+    this.expressionRevertMs = expressionRevertMs;
+  }
+
   async load(app: PIXI.Application, modelUrl: string): Promise<void> {
     this.app = app;
     const model = await Live2DModel.from(modelUrl);
@@ -39,7 +49,37 @@ export class Live2DController {
   }
 
   applyExpression(name: string): void {
-    if (!this.model || !name || name === "None" || name === "none") return;
+    if (!this.model) return;
+
+    // 新表情到达 → 取消上一次还没触发的回退计时
+    if (this.revertTimer !== null) {
+      window.clearTimeout(this.revertTimer);
+      this.revertTimer = null;
+    }
+
+    if (!name || name === "None" || name === "none") return;
+
+    this._setExpression(name);
+
+    // 非 default 且配置了回退间隔 → 调度恢复
+    if (this.expressionRevertMs > 0 && name !== this.defaultExpression) {
+      this.revertTimer = window.setTimeout(() => {
+        this.revertTimer = null;
+        this._setExpression(this.defaultExpression);
+      }, this.expressionRevertMs);
+    }
+  }
+
+  private _setExpression(name: string): void {
+    if (!this.model) return;
+    if (!name) {
+      // 空 default → 清掉所有表情,回到模型基础参数状态
+      const em = (this.model.internalModel as unknown as {
+        motionManager?: { expressionManager?: { resetExpression?: () => void } };
+      }).motionManager?.expressionManager;
+      em?.resetExpression?.();
+      return;
+    }
     try {
       this.model.expression(name);
     } catch (e) {

@@ -71,6 +71,10 @@ live2d:
   expression_change_frequency: 1.0
   motion_change_frequency: 0.3      # motion 默认偏保守(别动不动就播)
 
+  # 表情应用多少毫秒后自动切回 default_expression(0 = 不自动切回)
+  # 比如 LLM 给了 Angry,1 秒后 viewer 自动切回 default
+  expression_revert_ms: 1000
+
 # WebSocket + 静态文件 server (Phase 3a:推 expression/motion/audio 给 viewer)
 server:
   # 启用 → 起 FastAPI 跟 Twitch chat 并行跑
