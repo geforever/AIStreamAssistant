@@ -15,19 +15,27 @@ export class Live2DController {
     this.app = app;
     const model = await Live2DModel.from(modelUrl);
     this.model = model;
+    app.stage.addChild(model);
     this._fit();
     window.addEventListener("resize", () => this._fit());
-    app.stage.addChild(model);
   }
 
   private _fit(): void {
     if (!this.model || !this.app) return;
     const m = this.model;
-    const targetH = this.app.renderer.height * 0.95;
-    const scale = targetH / m.height;
+    // renderer.width / .height 是 backbuffer 物理像素(retina 2x),
+    // renderer.screen 才是逻辑/CSS 像素 — fit 必须用 screen,否则在 retina 上会放大 2 倍
+    const cw = this.app.renderer.screen.width;
+    const ch = this.app.renderer.screen.height;
+    // internalModel.width / height 是模型逻辑画布(常量),跟 anchor 对齐;
+    // m.width/m.height 是 bounds(只含可见 drawable,可能比逻辑画布小)→ fit 算不准
+    const im = m.internalModel as unknown as { width: number; height: number };
+    const scale = Math.min(cw / im.width, ch / im.height) * 0.9;
     m.scale.set(scale);
-    m.x = (this.app.renderer.width - m.width) / 2;
-    m.y = (this.app.renderer.height - m.height) / 2;
+    m.anchor.set(0.5, 0.5);
+    m.x = cw / 2;
+    m.y = ch / 2;
+    console.log("fit:", { cw, ch, imW: im.width, imH: im.height, scale });
   }
 
   applyExpression(name: string): void {
