@@ -15,6 +15,16 @@ async function main() {
   await live2d.load(app, cfg.modelUrl);
   console.log("live2d ready, model:", cfg.modelUrl);
 
+  // Chrome 严格 autoplay policy:AudioContext.resume() + audio.play() 都需用户手势
+  // 默认显示"点击开始"遮罩,点完才解锁 audio 并移除遮罩。
+  // OBS browser source 用 ?nooverlay=1 跳过(OBS 默认允许 autoplay,会自动 resume)
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("nooverlay") === "1") {
+    void live2d.unlockAudio();
+  } else {
+    _showUnlockOverlay(() => void live2d.unlockAudio());
+  }
+
   const ws = new WSClient(WS_URL, async (msg: ServerMessage) => {
     switch (msg.type) {
       case "init":
@@ -45,3 +55,21 @@ async function main() {
 }
 
 main().catch((e) => console.error("viewer boot failed:", e));
+
+function _showUnlockOverlay(onClick: () => void): void {
+  const overlay = document.createElement("div");
+  overlay.id = "unlock-overlay";
+  overlay.textContent = "点击开启 G 酱 (click to start)";
+  overlay.style.cssText = `
+    position: fixed; inset: 0; z-index: 9999;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.55); color: white;
+    font: 600 22px / 1.4 system-ui, -apple-system, sans-serif;
+    cursor: pointer; user-select: none;
+  `;
+  overlay.addEventListener("click", () => {
+    onClick();
+    overlay.remove();
+  }, { once: true });
+  document.body.appendChild(overlay);
+}
