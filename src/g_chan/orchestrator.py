@@ -115,10 +115,13 @@ class Orchestrator:
             expression, motion,
         )
 
+        # 先合成音频(慢),再几乎同时推 expression/motion/audio + 发 chat
+        # → viewer 端看到的表情切换、嘴动、聊天消息时间几乎一致
+        audio = await self._synthesize_audio(reply.text, language=reply.language)
         await self._viewer_sink.push_expression(expression)
         await self._viewer_sink.push_motion(motion)
-
-        await self._do_tts(reply.text, language=reply.language, user=msg.user)
+        if audio is not None:
+            await self._emit_audio(audio, user=msg.user, text=reply.text)
         chat_body = (
             f"{reply.text} {reply.kaomoji}".strip() if reply.kaomoji else reply.text
         )
@@ -185,10 +188,11 @@ class Orchestrator:
             expression, motion,
         )
 
+        audio = await self._synthesize_audio(reply.text, language=reply.language)
         await self._viewer_sink.push_expression(expression)
         await self._viewer_sink.push_motion(motion)
-
-        await self._do_tts(reply.text, language=reply.language, user="batch")
+        if audio is not None:
+            await self._emit_audio(audio, user="batch", text=reply.text)
         chat_body = (
             f"{reply.text} {reply.kaomoji}".strip() if reply.kaomoji else reply.text
         )
@@ -212,26 +216,29 @@ class Orchestrator:
             motion = self._default_motion
         return expression, motion
 
-    async def _do_tts(self, text: str, *, language: Language, user: str) -> None:
-        if self._tts is None:
-            return
-        if not text.strip():
-            return
+    async def _synthesize_audio(self, text: str, *, language: Language):
+        """合成音频但不写出 / 不推送 — 让 caller 决定推送时机。
+
+        text 为空或 TTS 未启用 / 失败时返回 None。
+        """
+        if self._tts is None or not text.strip():
+            return None
         try:
-            audio = await self._tts.synthesize(text, language=language)
+            return await self._tts.synthesize(text, language=language)
         except TTSError as e:
             log.warning("tts synth failed: %s", e)
-            return
+            return None
         except Exception as e:  # noqa: BLE001
             log.exception("tts synth crashed: %s", e)
-            return
+            return None
 
+    async def _emit_audio(self, audio, *, user: str, text: str) -> None:
+        """合成好的音频:写文件 sink(可选)+ 推 viewer。"""
         if self._audio_sink is not None:
             try:
                 await self._audio_sink.write(audio, user=user)
             except Exception as e:  # noqa: BLE001
                 log.warning("audio sink write failed: %s", e)
-
         await self._viewer_sink.push_audio(audio, user=user, text=text)
 
     def _fallback_reply(self) -> LLMReply:

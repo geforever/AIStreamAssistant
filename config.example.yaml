@@ -25,8 +25,8 @@ llm:
     kaomoji: "(=ω=)"
     # 8 mood 之一: happy/angry/sad/surprised/shy/thinking/tsundere/dizzy
     mood: "dizzy"
-    # 回退语言 — 决定 TTS 用哪个声线念 fallback text。zh/en/ja
-    language: "ja"
+    # 回退语言 — 必须匹配上面 text 的实际语言,决定 TTS 用哪个声线念 fallback text。zh/en/ja
+    language: "zh"
 
 persona:
   prompt_file: "prompts/character.md"
